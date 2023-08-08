@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: csm-x100-eks-kmodulesdaemonset
+  name: csm-x100-eks-kmodulesdaemonset
+  namespace: x100-operator-resources
+spec:
+  selector:
+    matchLabels:
+      app: csm-x100-eks-kmodulesdaemonset
+  template:
+    metadata:
+      labels:
+        app: csm-x100-eks-kmodulesdaemonset
+    spec:
+      serviceAccount: csm-x100boot-eks-sa
+      serviceAccountName: csm-x100boot-eks-sa
+      securityContext:
+        runAsUser: 0
+        #privileged: true
+      imagePullSecrets:
+      - name: csm-x100-eks-pullsecret
+      initContainers:
+      - name: init-mhi-drivers
+        image: registry.access.redhat.com/ubi8/ubi-minimal
+        command: ['sh', '-c', "echo Init of drivers pod; until ls /tmp/hwmgr-running 2>/dev/null; do echo waiting for HwMgr-Pod to be Ready; sleep 2; done"]
+        volumeMounts:
+        - name: hwmgr-status
+          mountPath: /tmp
+      containers:
+      - image: #"<Replace with Prebuilt Driver pod image>"
+        name: csm-x100-eks-kmodulescontainer
+        imagePullPolicy: Always
+        command: ["/sbin/init"]
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "rmmod -f csm_dp mhi_pci wwan_mhi wwan mhi_net mhi_uci mhi"]
+        securityContext:
+          runAsUser: 0
+          privileged: true
+        volumeMounts:
+        - name: dev
+          mountPath: /dev
+        - name: sysfscgroup
+          mountPath: /sys/fs/cgroup
+        - name: sys-modules
+          mountPath: /sys/module/firmware_class/parameters
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: hwmgr-status
+          hostPath:
+            path: /tmp
+        - name: sysfscgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: sys-modules
+          hostPath:
+            path: /sys/module/firmware_class/parameters
+            type: Directory
+      nodeSelector:
+        #Selector should reflect the nodes that have x100 card
+        #at a later point
+        qualcomm.com/x100.present: "true"

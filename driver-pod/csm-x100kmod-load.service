@@ -1,0 +1,13 @@
+[Unit]
+Description=X100 kernel modules load/unload on OCP service
+
+[Service]
+Type=oneshot
+Group=root
+ExecStart=/usr/bin/csm-x100kmod-load.sh
+RemainAfterExit=true
+ExecStop=/usr/bin/csm-x100kmod-unload.sh
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
