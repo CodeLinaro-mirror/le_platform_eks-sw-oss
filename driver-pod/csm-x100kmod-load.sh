@@ -4,7 +4,12 @@
 # All Rights Reserved.
 # Confidential and Proprietary - Qualcomm Technologies, Inc.
 #******************************************************************************/
+
 echo "X100 drivers loading" > /var/log/x100_kmodules-load_ocp.log
+sh -c "echo -n /var/lib/firmware > /sys/module/firmware_class/parameters/path"
+echo "firmware class path update status: $?" > /var/log/x100_kmodules-load_ocp.log
+cat /sys/module/firmware_class/parameters/path > /var/log/x100_kmodules-load_ocp.log
+
 
 DPATH=/lib/modules/`uname -r`/
 insmod $DPATH/mhi.ko*
