@@ -14,6 +14,8 @@ spec:
       labels:
         app: csm-x100-device-plugin
     spec:
+      serviceAccount: csm-x100boot-eks-sa
+      serviceAccountName: csm-x100boot-eks-sa
       securityContext:
         runAsUser: 0
       imagePullSecrets:
@@ -32,15 +34,17 @@ spec:
           count: 1
         name: csm-x100-device-plugin-container
         securityContext:
-          runAsUser: 0
           privileged: true
+          runAsUser: 0
         volumeMounts:
         - name: device-plugin
           mountPath: /var/lib/kubelet/device-plugins
         - name: dev
           mountPath: /dev
-        - name: sys-dev
+        - name: sys-bus
           mountPath: /sys/bus/pci/devices
+        - name: sys-devices
+          mountPath: /sys/devices
       volumes:
       - name: device-plugin
         hostPath:
@@ -48,9 +52,13 @@ spec:
       - name: dev
         hostPath:
           path: /dev
-      - name: sys-dev
+      - name: sys-bus
         hostPath:
           path: /sys/bus/pci/devices
+          type: Directory
+      - name: sys-devices
+        hostPath:
+          path: /sys/devices
           type: Directory
       nodeSelector:
         qualcomm.com/x100.present: "true"
