@@ -6,9 +6,9 @@
 #******************************************************************************/
 
 echo "X100 drivers loading" > /var/log/x100_kmodules-load_ocp.log
-sh -c "echo -n /var/lib/firmware > /sys/module/firmware_class/parameters/path"
-echo "firmware class path update status: $?" > /var/log/x100_kmodules-load_ocp.log
-cat /sys/module/firmware_class/parameters/path > /var/log/x100_kmodules-load_ocp.log
+bash -c "echo -n /var/lib/firmware > /sys/module/firmware_class/parameters/path"
+echo "firmware class path update status: $?" >> /var/log/x100_kmodules-load_ocp.log
+cat /sys/module/firmware_class/parameters/path >> /var/log/x100_kmodules-load_ocp.log
 
 
 DPATH=/lib/modules/`uname -r`/
@@ -18,6 +18,7 @@ insmod $DPATH/mhi_net.ko*
 insmod $DPATH/wwan.ko*
 insmod $DPATH/wwan_mhi.ko*
 insmod $DPATH/mhi_pci.ko*
+insmod $DPATH/mhi_ptp.ko*
 insmod $DPATH/csm_dp.ko*
 
 
