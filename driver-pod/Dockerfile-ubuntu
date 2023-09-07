@@ -1,0 +1,30 @@
+FROM public.ecr.aws/docker/library/ubuntu:22.04
+
+ARG KERNEL_VERSION=5.15.0-1045-realtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       software-properties-common \
+       rsyslog systemd systemd-cron sudo kmod \
+    && apt-get clean \
+    && rm -Rf /usr/share/doc && rm -Rf /usr/share/man \
+    && rm -rf /var/lib/apt/lists/* \
+    && touch -d "2 hours ago" /var/lib/apt/lists
+RUN mkdir -p /lib/modules/${KERNEL_VERSION}
+
+COPY host-drivers/mhi.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/mhi_pci.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/mhi_uci.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/wwan.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/wwan_mhi.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/mhi_net.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/mhi_ptp.ko /lib/modules/${KERNEL_VERSION}/
+COPY host-drivers/csm_dp.ko /lib/modules/${KERNEL_VERSION}/
+
+WORKDIR /lib/modules/${KERNEL_VERSION}
+RUN echo "softdep csm_dp pre: mhi mhi_uci mhi_net wwan wwan_mhi mhi_pci mhi_ptp" > /etc/modprobe.d/softdep.conf
+COPY csm-x100kmod-load.service /etc/systemd/system/
+COPY --chown=bin csm-x100kmod-load.sh /usr/bin
+COPY --chown=bin csm-x100kmod-unload.sh /usr/bin
+
+RUN systemctl enable csm-x100kmod-load;
+CMD ["/lib/systemd/systemd"]
