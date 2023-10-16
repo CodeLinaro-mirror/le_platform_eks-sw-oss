@@ -1,0 +1,32 @@
+apiVersion: qualcomm.com/v1
+kind: X100ManagementPolicy
+metadata:
+  name: x100-management-policy
+spec:
+  firmware:
+    repository: 
+    image: 
+    version: 
+    imagePullPolicy: Always
+    imagePullSecrets:
+    - eks-pull-secret
+  hwManager:
+    repository: 
+    image: 
+    version: 
+    imagePullPolicy: Always
+    imagePullSecrets:
+    - eks-pull-secret
+  kModule:
+    repository: 
+    image: 
+    version: 
+    tag: 
+    imageRepoSecret: eks-pull-secret
+  devicePlugin:
+    repository: 
+    image: 
+    version: 
+    imagePullPolicy: Always
+    imagePullSecrets:
+    - eks-pull-secret

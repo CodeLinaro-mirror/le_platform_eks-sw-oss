@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: csm-x100-deviceplugin-ds
+  namespace: x100-operator-resources
+  labels:
+    app: csm-x100-deviceplugin-ds
+spec:
+  selector:
+    matchLabels:
+      app: csm-x100-deviceplugin-ds
+  template:
+    metadata:
+      labels:
+        app: csm-x100-deviceplugin-ds
+    spec:
+      serviceAccount: csm-x100-sa
+      serviceAccountName: csm-x100-sa
+      securityContext:
+        runAsUser: 0
+      imagePullSecrets:
+      - name: eks-pull-secret
+      containers:
+      - image: #"<Replace with Csm-Device Plugin image>"
+        args:
+        - --device
+        - |
+          name: qti-csm
+          groups:
+            - paths:
+                - path: /dev/csm*
+        - --vfcount
+        - |
+          count: 3
+        name: csm-x100-deviceplugin
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        volumeMounts:
+        - name: device-plugin
+          mountPath: /var/lib/kubelet/device-plugins
+        - name: dev
+          mountPath: /dev
+        - name: sys-bus
+          mountPath: /sys/bus/pci/devices
+        - name: sys-devices
+          mountPath: /sys/devices
+      volumes:
+      - name: device-plugin
+        hostPath:
+          path: /var/lib/kubelet/device-plugins
+      - name: dev
+        hostPath:
+          path: /dev
+      - name: sys-bus
+        hostPath:
+          path: /sys/bus/pci/devices
+          type: Directory
+      - name: sys-devices
+        hostPath:
+          path: /sys/devices
+          type: Directory
+      nodeSelector:
+        qualcomm.com/x100.present: "true"

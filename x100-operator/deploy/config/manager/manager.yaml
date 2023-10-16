@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+    pod-security.kubernetes.io/enforce: privileged
+  name: system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: x100-operator
+  namespace: system
+  labels:
+    app.kubernetes.io/component: x100-operator
+    app: x100-operator
+spec:
+  selector:
+    matchLabels:
+      app: x100-operator
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: x100-operator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+      - command:
+        - x100-operator
+        args:
+        - --leader-elect
+        image: #<Replace x100-operator controller image here>
+        imagePullPolicy: Always
+        imagePullSecrets:
+        - eks-pull-secret
+        name: x100-operator
+        securityContext:
+          allowPrivilegeEscalation: false
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      serviceAccountName: x100-operator
+      terminationGracePeriodSeconds: 10

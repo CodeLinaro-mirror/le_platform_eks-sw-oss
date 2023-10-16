@@ -1,0 +1,24 @@
+apiVersion: kmm.sigs.x-k8s.io/v1beta1
+kind: Module
+metadata:
+  name: csm-x100-kmodules-kmm
+  namespace: x100-operator-resources
+spec:
+  moduleLoader:
+    container:
+      modprobe:
+        moduleName: csm_dp
+      kernelMappings:
+        - regexp: '^.+$'
+          containerImage: #"Replace"
+          #build:
+          #  buildArgs:
+          #  - name: LONG_AU_TAG
+          #    value: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.219
+          #  dockerfileConfigMap:
+          #    name: csm-x100-kmmdockerfile
+          #    namespace: x100-operator-resources
+  imageRepoSecret:
+    name: eks-pull-secret
+  selector:
+    qualcomm.com/x100.present: "true"

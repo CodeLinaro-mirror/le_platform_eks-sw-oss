@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csm-x100-kmmdockerfile
+  namespace: x100-operator-resources
+data:
+  dockerfile: |
+    ARG DTK_AUTO
+    FROM ${DTK_AUTO} as builder
+
+    ARG KERNEL_VERSION
+    ARG LONG_AU_TAG
+    RUN mkdir -p /tmp/clo-qcos
+    WORKDIR /tmp/clo-qcos
+    RUN curl -k https://storage.googleapis.com/git-repo-downloads/repo > repo; chmod a+x repo
+    RUN ./repo init -u https://git.codelinaro.org/clo/le/le/manifest.git -b release -m ${LONG_AU_TAG}.xml --repo-url=https://git.codelinaro.org/clo/tools/repo.git --repo-branch=qc-stable --depth=1
+    RUN ./repo sync -j8
+    RUN cp -rf src/platform/mhi-host /usr/src/.
+    RUN cp -rf src/platform/vendor/qcom-opensource/dp-driver /usr/src/.
+
+    WORKDIR /usr/src/mhi-host
+    RUN chmod +x build/envsetup.sh; \
+        source build/envsetup.sh; \
+        export MHI_KERNEL_VER=${KERNEL_VERSION}; \
+        sed -i "/make -C/ s/$/ MHI_MODULE_VERSION=${LONG_AU_TAG}/" build/build.sh; \
+        ./build/build.sh;
+
+    WORKDIR /usr/src/dp-driver
+    RUN export DPDR_ROOT=/usr/src/dp-driver; \
+        export MHI_ROOT=/usr/src/mhi-host; \
+        export KERNEL_VER=${KERNEL_VERSION}; \
+        make -C /lib/modules/${KERNEL_VER}/build \
+        M=$DPDR_ROOT/drivers/char/csm-dp \
+        MHI_BUILD_ROOT=/usr/src/mhi-host \
+        KBUILD_EXTRA_SYMBOLS=$MHI_ROOT/drivers/bus/mhi/Module.symvers \
+        CONFIG_CSM_DP=m DP_MODULE_VERSION=${LONG_AU_TAG};
+
+    FROM registry.access.redhat.com/ubi8/ubi-init
+    ARG KERNEL_VERSION
+    RUN yum install -y kmod && yum clean all
+    RUN mkdir -p /opt/lib/modules/${KERNEL_VERSION}
+    COPY --from=builder /usr/src/mhi-host/drivers/bus/mhi/core/mhi.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/bus/mhi/mhi_pci.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/bus/mhi/mhi_uci.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/net/wwan/wwan.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/net/wwan/wwan_mhi.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/net/mhi/mhi_net.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/mhi-host/drivers/ptp/mhi_ptp.ko /opt/lib/modules/${KERNEL_VERSION}/
+    COPY --from=builder /usr/src/dp-driver/drivers/char/csm-dp/csm_dp.ko /opt/lib/modules/${KERNEL_VERSION}/
+    WORKDIR /opt/lib/modules/${KERNEL_VERSION}
+    RUN echo "softdep csm_dp pre: mhi mhi_uci mhi_net wwan wwan_mhi mhi_pci mhi_ptp" > /etc/modprobe.d/softdep.conf
+    RUN depmod -b /opt ${KERNEL_VERSION}

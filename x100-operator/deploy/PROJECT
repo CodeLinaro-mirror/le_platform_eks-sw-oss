@@ -1,0 +1,19 @@
+domain: com
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: x100-operator
+repo: x100-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: false
+  controller: true
+  domain: com
+  group: qualcomm
+  kind: X100ManagementPolicy
+  path: x100-operator/api/v1
+  version: v1
+version: "3"

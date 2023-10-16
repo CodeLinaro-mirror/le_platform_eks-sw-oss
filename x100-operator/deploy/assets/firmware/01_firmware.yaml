@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: csm-x100-firmware-ds
+  name: csm-x100-firmware-ds
+  namespace: x100-operator-resources
+spec:
+  selector:
+    matchLabels:
+      app: csm-x100-firmware-ds
+  template:
+    metadata:
+      labels:
+        app: csm-x100-firmware-ds
+    spec:
+      serviceAccount: csm-x100-sa
+      serviceAccountName: csm-x100-sa
+      securityContext:
+        runAsUser: 0
+      imagePullSecrets:
+      - name: eks-pull-secret
+      containers:
+      - image: #"<Replace with Firmware pod image>"
+        name: csm-x100-firmware
+        imagePullPolicy: Always
+        command: ["/sbin/init"]
+        securityContext:
+          runAsUser: 0
+          privileged: true
+        volumeMounts:
+        - name: dev
+          mountPath: /dev
+        - name: x100-firmware
+          mountPath: /var/lib/firmware/qcom/lassen
+        - name: varlog
+          mountPath: /var/log
+        - name: sysfscgroup
+          mountPath: /sys/fs/cgroup
+      - image: public.ecr.aws/docker/library/ubuntu:22.04
+        name: csm-x100-firmware-logs
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        args:
+        - /bin/bash
+        - -c
+        - "tail -n+1 -F /var/log/x100_boot_ocp.log /var/log/ver_info.txt"
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: sysfscgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: varlog
+          emptyDir: {}
+        - name: x100-firmware
+          persistentVolumeClaim:
+            claimName: csm-x100-pvc
+      nodeSelector:
+        qualcomm.com/x100.present: "true"

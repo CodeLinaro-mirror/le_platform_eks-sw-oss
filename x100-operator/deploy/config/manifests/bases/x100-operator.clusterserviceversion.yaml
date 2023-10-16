@@ -1,0 +1,49 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: x100-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: X100ManagementPolicy allows you to configure the x100 Operator
+      displayName: X100 Management Policy
+      kind: X100ManagementPolicy
+      name: x100managementpolicies.qualcomm.com
+      version: v1
+  description: Manages policy for x100
+  displayName: x100-operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - x100
+  - csm
+  - x100-operator
+  links:
+  - name: X100 Operator
+    url: https://x100-operator.domain
+  maintainers:
+  - email: quic_vmellemp@quicinc.com
+    name: vmellemp
+  maturity: alpha
+  provider:
+    name: qualcomm
+  version: 0.0.0
