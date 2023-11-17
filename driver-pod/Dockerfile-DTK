@@ -1,0 +1,21 @@
+FROM public.ecr.aws/docker/library/ubuntu:22.04
+
+ARG KERNEL_VERSION
+RUN mkdir -p /lib/modules
+RUN mkdir -p /usr/src
+COPY /lib/modules/${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}
+COPY /usr/src/ /usr/src/
+RUN apt-get update && apt-get install -y bc \
+    bison \
+    flex \
+    libelf-dev \
+    gnupg \
+    wget \
+    git \
+    make \
+    tree \
+    curl \
+    dwarves \
+    python-is-python3 \
+    gcc \
+    pip

@@ -11,13 +11,17 @@ spec:
       kernelMappings:
         - regexp: '^.+$'
           containerImage: #"Replace"
-          #build:
-          #  buildArgs:
-          #  - name: LONG_AU_TAG
-          #    value: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.219
-          #  dockerfileConfigMap:
-          #    name: csm-x100-kmmdockerfile
-          #    namespace: x100-operator-resources
+          build:
+            buildArgs:
+            - name: LONG_AU_TAG
+              value: #ToBeReplacedbyController
+            - name: DTK_AUTO
+              value: #ToBeReplaced
+            - name: DTK_SRC
+              value: #ToBeReplaced
+            dockerfileConfigMap:
+              name: csm-x100-kmmdockerfile
+              namespace: x100-operator-resources
   imageRepoSecret:
     name: eks-pull-secret
   selector:

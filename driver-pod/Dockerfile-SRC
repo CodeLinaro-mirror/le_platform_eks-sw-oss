@@ -1,0 +1,16 @@
+FROM public.ecr.aws/docker/library/ubuntu:22.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       sudo kmod \
+    && apt-get clean \
+    && rm -Rf /usr/share/doc \
+    && rm -Rf /usr/share/man \
+    && rm -rf /var/lib/apt/lists/* \
+    && touch -d "2 hours ago" /var/lib/apt/lists
+
+COPY mhi-host /usr/src/mhi-host
+
+COPY dp-driver /usr/src/dp-driver
+RUN ls /usr/src/
+

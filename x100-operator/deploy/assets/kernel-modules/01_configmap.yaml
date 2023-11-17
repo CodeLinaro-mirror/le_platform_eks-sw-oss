@@ -6,17 +6,19 @@ metadata:
 data:
   dockerfile: |
     ARG DTK_AUTO
-    FROM ${DTK_AUTO} as builder
+    ARG DTK_SRC
+    FROM "${DTK_SRC}" as src-img
+    RUN ls /usr/src
 
+    FROM "${DTK_AUTO}:${KERNEL_VERSION}" as builder
     ARG KERNEL_VERSION
     ARG LONG_AU_TAG
+    SHELL ["/bin/bash", "-c"]
     RUN mkdir -p /tmp/clo-qcos
     WORKDIR /tmp/clo-qcos
-    RUN curl -k https://storage.googleapis.com/git-repo-downloads/repo > repo; chmod a+x repo
-    RUN ./repo init -u https://git.codelinaro.org/clo/le/le/manifest.git -b release -m ${LONG_AU_TAG}.xml --repo-url=https://git.codelinaro.org/clo/tools/repo.git --repo-branch=qc-stable --depth=1
-    RUN ./repo sync -j8
-    RUN cp -rf src/platform/mhi-host /usr/src/.
-    RUN cp -rf src/platform/vendor/qcom-opensource/dp-driver /usr/src/.
+    COPY --from=src-img /usr/src/mhi-host /usr/src/mhi-host
+    COPY --from=src-img /usr/src/dp-driver /usr/src/dp-driver
+    RUN ls /usr/src
 
     WORKDIR /usr/src/mhi-host
     RUN chmod +x build/envsetup.sh; \
@@ -35,9 +37,9 @@ data:
         KBUILD_EXTRA_SYMBOLS=$MHI_ROOT/drivers/bus/mhi/Module.symvers \
         CONFIG_CSM_DP=m DP_MODULE_VERSION=${LONG_AU_TAG};
 
-    FROM registry.access.redhat.com/ubi8/ubi-init
+    FROM "${DTK_SRC}"
     ARG KERNEL_VERSION
-    RUN yum install -y kmod && yum clean all
+
     RUN mkdir -p /opt/lib/modules/${KERNEL_VERSION}
     COPY --from=builder /usr/src/mhi-host/drivers/bus/mhi/core/mhi.ko /opt/lib/modules/${KERNEL_VERSION}/
     COPY --from=builder /usr/src/mhi-host/drivers/bus/mhi/mhi_pci.ko /opt/lib/modules/${KERNEL_VERSION}/
