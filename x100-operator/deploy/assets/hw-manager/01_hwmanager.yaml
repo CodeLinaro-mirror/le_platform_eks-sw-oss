@@ -39,7 +39,7 @@ spec:
         lifecycle:
           preStop:
             exec:
-              command: ["/bin/sh", "-c", "rm -rf /var/tmp/hwmgr-running"]
+              command: ["/bin/bash", "-c", "rm -rf /var/tmp/hwmgr-running"]
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged
@@ -71,7 +71,7 @@ spec:
         - /bin/bash
         - -c
         - "tail -n+1 -F /var/log/device0/journal.log /var/log/device1/journal.log /var/log/device2/journal.log /var/log/device3/journal.log"
-      #hostNetwork: true
+      hostNetwork: true
       volumes:
       - name: fwclasspath
         hostPath:
