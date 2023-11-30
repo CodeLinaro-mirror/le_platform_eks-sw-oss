@@ -51,6 +51,10 @@ spec:
           name: sysfscgroup
         - mountPath: /var/tmp
           name: csm-hwmgr-status
+        - name: sys-bus
+          mountPath: /sys/bus/pci/devices
+        - name: sys-devices
+          mountPath: /sys/devices          
       - name: csm-x100-hwmanager-logs1
         image: public.ecr.aws/docker/library/ubuntu:22.04
         imagePullPolicy: IfNotPresent
@@ -92,5 +96,13 @@ spec:
           type: Directory
       - name: varlog
         emptyDir: {}
+      - name: sys-bus
+        hostPath:
+          path: /sys/bus/pci/devices
+          type: Directory
+      - name: sys-devices
+        hostPath:
+          path: /sys/devices
+          type: Directory
       nodeSelector:
         qualcomm.com/x100.present: "true"

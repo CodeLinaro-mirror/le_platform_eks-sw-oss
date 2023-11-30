@@ -22,6 +22,7 @@ spec:
       - name: eks-pull-secret
       containers:
       - image: #"<Replace with Csm-Device Plugin image>"
+        imagePullPolicy: Always
         args:
         - --device
         - |
@@ -29,9 +30,6 @@ spec:
           groups:
             - paths:
                 - path: /dev/csm*
-        - --vfcount
-        - |
-          count: 3
         name: csm-x100-deviceplugin
         securityContext:
           privileged: true
