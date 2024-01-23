@@ -36,6 +36,12 @@ import (
 
 // X100ManagementPolicySpec defines the desired state of X100ManagementPolicy
 type X100ManagementPolicySpec struct {
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.\-\/]+
+    SwVersion string `json:"swVersion"`
+    NodeSelectors []string `json:"nodeSelectors,omitempty"`
+    X100Resources X100ResourceSpec `json:"x100Resources"`
+}
+type X100ResourceSpec struct {
     Firmware      ComponentSpec `json:"firmware"`
     HwManager     ComponentSpec `json:"hwManager"`
     KModule       KModuleSpec   `json:"kModule"`

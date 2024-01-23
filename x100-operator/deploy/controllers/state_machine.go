@@ -31,6 +31,26 @@ import (
 const (
     x100LabelKey   = "qualcomm.com/x100.present"
     x100LabelValue = "true"
+    x100activecrdKey = "qualcomm.com/x100.activecrd"
+    x100swversionKey = "qualcomm.com/x100.swversion"
+    x100swvdefaultKey = "qualcomm.com/x100.swvdefault"
+    x100swvdefaultValue = "true"
+    x100swvNondefaultKey = "qualcomm.com/x100.swvNondefault"
+    x100swvNondefaultValue = "true"
+)
+
+var x100crdLabels = []string{
+   x100swversionKey,
+   x100swvdefaultKey,
+   x100swvNondefaultKey,
+   x100activecrdKey,
+   x100HwMgrRunning,
+   x100LabelKey,
+}
+
+
+const (
+	SoftwareVersionSeperator = "-"
 )
 
 var x100NodeLabels = map[string]string{
@@ -67,11 +87,58 @@ type ControllerState struct {
     rec               *X100ManagementPolicyReconciler
 }
 
+func cleanupStaleLabels(labels map[string]string) map[string]string {
+   //Delete all the labels related to x100 on Operator Clean-up(or controller exit)
+   return labels
+}
+
+func attachDefaultSWLabels(labels map[string]string) map[string]string {
+   labels[x100swversionKey] = "default"
+   labels[x100swvdefaultKey] = "true"
+   labels[x100activecrdKey] = "x100managementpolicy-default"
+   return labels
+}
+
+func cleanupStaleCRDLabels(labels map[string]string) map[string]string {
+    for _, label := range x100crdLabels {
+        if _, ok := labels[label]; ok {
+	   delete(labels, label)
+	}
+    }
+    return labels
+}
+
+func isrunningDefaultSW(labels map[string]string) bool {
+    if _, ok := labels[x100swvdefaultKey]; ok {
+        if labels[x100swvdefaultKey] == x100swvdefaultValue {
+            // node is running with defaultSW
+            return true
+        }
+    }
+    return false
+}
+
+func isrunningNonDefaultSW(labels map[string]string) bool {
+    if _, ok := labels[x100swvNondefaultKey]; ok {
+        if labels[x100swvNondefaultKey] == x100swvNondefaultValue {
+            // node is running with Non-defaultSW
+            return true
+        }
+    }
+    return false
+}
+
+func hasActiveCRDLabel(labels map[string]string, currentCRName string) bool {
+    if _, ok := labels[x100activecrdKey]; ok {
+        if labels[x100activecrdKey] == currentCRName {
+            return true
+        }
+    }
+    return false
+}
 func hasCustomX100Label(labels map[string]string) bool {
     if _, ok := labels[x100LabelKey]; ok {
-        //log.Log.Info("Label key matched for ", "key: ", x100LabelKey, "Value: ", labels[x100LabelKey], "Expected:", x100LabelValue)
         if labels[x100LabelKey] == x100LabelValue {
-            // node is already labelled
             return true
         }
     }
@@ -82,9 +149,8 @@ func hasX100PCILabels(labels map[string]string) bool {
 
     for key, val := range labels {
         if _, ok := x100NodeLabels[key]; ok {
-            //log.Log.Info("Label key matched for ", "key: ", key, "Value: ", val, "Expected: ", x100NodeLabels[key])
             if x100NodeLabels[key] == val {
-                //log.Log.Info("Found x100PCILabels")
+                log.Log.Info("Found x100PCILabels")
                 return true
             }
         }
@@ -92,7 +158,7 @@ func hasX100PCILabels(labels map[string]string) bool {
     return false
 }
 
-func (n *ControllerState) labelX100Nodes() error {
+func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 
     // fetch all nodes in the cluster
     log.Log.Info("Entering labelX100Nodes() ")
@@ -130,8 +196,71 @@ func (n *ControllerState) labelX100Nodes() error {
     return nil
 }
 
+func (c *ControllerState) labelX100NodeswithCRDFields(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
+
+    // fetch all nodes in the cluster
+    log.Log.Info("Entering labelX100NodeswithCRDFields() ")
+    opts := []client.ListOption{}
+    list := &corev1.NodeList{}
+    err := c.rec.List(context.TODO(), list, opts...)
+    if err != nil {
+        return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+    }
+    nodeSelectorsListfromcrd := policySpec.NodeSelectors
+    log.Log.Info("labelX100NodeswithCRDFields()- ","Nodes list length from CRD- ",len(nodeSelectorsListfromcrd))
+    if len(nodeSelectorsListfromcrd) == 0 {
+        for _, node := range list.Items {
+            // get node labels
+            labels := node.GetLabels()
+            hasCustomLabel := hasCustomX100Label(labels)
+	    //Below fn call will return true if a defaultSW version(label present and value is true) is running on the node.
+	    isrunningNonDefaultSW_flag := isrunningNonDefaultSW(labels)
+            if hasCustomLabel && !isrunningNonDefaultSW_flag {
+                // label node with the custom label
+                labels[x100activecrdKey] = policy.ObjectMeta.Name
+                labels[x100swversionKey] = policySpec.SwVersion
+	        if len(nodeSelectorsListfromcrd) == 0 {
+                    labels[x100swvdefaultKey] = x100swvdefaultValue
+	        }
+                node.SetLabels(labels)
+                err = c.rec.Update(context.TODO(), &node)
+                if err != nil {
+                    return fmt.Errorf("Default- Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100activecrdKey, err.Error())
+                }
+            }
+        }
+    } else {
+        log.Log.Info("labelX100NodeswithCRDFields()- Non Default CR which has nodeSelector entries")
+        for _, node := range list.Items {
+            for _, ns := range nodeSelectorsListfromcrd {
+	       if node.ObjectMeta.Name == ns {
+                    labels := node.GetLabels()
+		    hasCustomLabel := hasCustomX100Label(labels)
+		    isrunningDefaultSW_flag := isrunningDefaultSW(labels)
+		    isrunningNonDefaultSW_flag := isrunningNonDefaultSW(labels)
+		    if hasCustomLabel && !isrunningNonDefaultSW_flag {
+		        if isrunningDefaultSW_flag {
+			   delete(labels, x100swvdefaultKey)
+			}
+                        labels[x100activecrdKey] = policy.ObjectMeta.Name
+			labels[x100swversionKey] = policySpec.SwVersion
+			labels[x100swvNondefaultKey] = x100swvNondefaultValue
+			node.SetLabels(labels)
+			err = c.rec.Update(context.TODO(), &node)
+			if err != nil {
+                            return fmt.Errorf("Non-Default- Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100activecrdKey, err.Error())
+                        }
+		    }
+	       }
+	    }
+	}
+    }
+    return nil
+}
+
+
 // State Machine
-func (c *ControllerState) start(reconciler *X100ManagementPolicyReconciler, policy *xcardv1.X100ManagementPolicy) error {
+func (c *ControllerState) start(reconciler *X100ManagementPolicyReconciler, policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 
     // Initializate the ControllerState
     c.currentState = startState
@@ -145,7 +274,7 @@ func (c *ControllerState) start(reconciler *X100ManagementPolicyReconciler, poli
     AssetMap = map[string]Asset{}
 
     //fetch all nodes and label x100 nodes
-    err := c.labelX100Nodes()
+    err := c.labelX100Nodes(policy, policySpec)
     if err != nil {
         return err
     }

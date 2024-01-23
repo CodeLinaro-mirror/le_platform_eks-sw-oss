@@ -1,12 +1,13 @@
 module x100-operator
 
-go 1.19
+go 1.21
 
 require (
     github.com/operator-framework/api v0.17.4
     k8s.io/apimachinery v0.26.1
     k8s.io/client-go v0.26.1
     sigs.k8s.io/controller-runtime v0.14.4
+    sigs.k8s.io/node-feature-discovery v0.15.1
 )
 
 require (

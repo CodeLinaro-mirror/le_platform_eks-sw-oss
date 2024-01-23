@@ -24,7 +24,7 @@ rm -rf  $DEST_PATH/*
 cd $DEST_PATH
 
 # Create an operator project, this will generate boilerplate code
-operator-sdk init --domain=com --repo local/mnt/workspace/vmellemp/lassenaws/1012-k8sx100-wkmmo/x100-operator
+operator-sdk init --domain=com --repo ${DEST_PATH:1}
 operator-sdk create api --group=qualcomm --version=v1 --kind=X100ManagementPolicy
 
 # Copy the PROJECT file, change it accordingly if domain and group have been changed
@@ -58,7 +58,7 @@ make generate manifests
 # If you change domain or project name, change these accordingly
 
 \mkdir -p $DEST_PATH/config/x100-crd
-\cp -r $SOURCE_PATH/config/x100-crd/qualcomm_v1_x100managementpolicy.yaml $DEST_PATH/config/x100-crd/
+\cp -r $SOURCE_PATH/config/x100-crd/* $DEST_PATH/config/x100-crd/
 \cp -r $SOURCE_PATH/config/rbac/*role_binding*.yaml $DEST_PATH/config/rbac/
 \cp -r $SOURCE_PATH/config/rbac/service_account.yaml $DEST_PATH/config/rbac/service_account.yaml
 
