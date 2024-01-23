@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: csm-x100-fconfig-ds-<Version>
+  namespace: x100-operator-resources
+  labels:
+    app: csm-x100-fconfig-ds
+spec:
+  selector:
+    matchLabels:
+      app: csm-x100-fconfig-ds
+  template:
+    metadata:
+      labels:
+        app: csm-x100-fconfig-ds
+    spec:
+      imagePullSecrets:
+      - name: eks-pull-secret
+      containers:
+      - name: csm-x100-fconfig
+        image: #<ToBeReplaced with fconfig container image>
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /var/lib/firmware/qcom/lassen
+          name: hostpath-privileged
+        - mountPath: /var/tmp
+          name: csm-fconfig-status
+      volumes:
+      - name: hostpath-privileged
+        hostPath:
+          path: /var/lib/firmware/qcom/lassen
+      - name: csm-fconfig-status
+        hostPath:
+          path: /tmp
+          type: Directory
+      nodeSelector:
+        kubernetes.io/hostname: #<Node-Name>  ##For Single node config Update
+        #qualcomm.com/x100.swversion: "default"  ##For all the Nodes running default SW version
