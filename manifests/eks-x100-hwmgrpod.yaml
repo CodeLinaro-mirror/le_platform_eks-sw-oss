@@ -22,7 +22,7 @@ spec:
       - name: csm-x100-eks-pullsecret
       containers:
       - name: csm-x100-eks-hwmgrcontainer
-        image: #"<Replace with HwManager Pod image>"
+        image: #"<Replace with HwManager image>"
         imagePullPolicy: Always
         securityContext:
           privileged: true
@@ -62,6 +62,17 @@ spec:
         - /bin/sh
         - -c
         - "tail -n+1 -F /var/log/device0/journal.log /var/log/device1/journal.log /var/log/device2/journal.log /var/log/device3/journal.log"
+      - name: csm-x100-exporter
+        image: #"<Replace with exporter image>"
+        imagePullPolicy: Always
+        volumeMounts:
+        - name:varlog
+        mountpath: /var/log
+        args:
+        - python3
+        - /usr/bin/exporter.py
+        - --i 10
+        - --p 9445
       hostNetwork: true
       volumes:
       - name: hostpath-privileged

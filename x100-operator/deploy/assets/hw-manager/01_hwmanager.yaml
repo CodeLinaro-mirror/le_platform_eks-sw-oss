@@ -31,7 +31,7 @@ spec:
       - name: eks-pull-secret
       containers:
       - name: csm-x100-hwmanager
-        image: "docker-registry.qualcomm.com/vmellemp/hwmgr-ubuntu:1009"
+        image: <hwmanager container image>
         imagePullPolicy: Always
         securityContext:
           privileged: true
@@ -75,6 +75,17 @@ spec:
         - /bin/bash
         - -c
         - "tail -n+1 -F /var/log/device0/journal.log /var/log/device1/journal.log /var/log/device2/journal.log /var/log/device3/journal.log"
+      - name: csm-x100-exporter
+        image: <exporter container image>
+        imagePullPolicy: Always
+        volumeMounts:
+        - name:varlog
+          mountpath: /var/log
+        args:
+        - python3
+        - /usr/bin/exporter.py
+        - --i 10
+        - --p 9445
       hostNetwork: true
       volumes:
       - name: fwclasspath
