@@ -79,6 +79,10 @@ type KModuleSpec struct {
     Version string `json:"version"`
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
     Tag             string `json:"tag"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\-]+
+    DtkAutoImage string `json:"dtkAutoImage"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\-]+
+    DtkSrcImage string `json:"dtkSrcImage"`
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
     ImageRepoSecret string `json:"imageRepoSecret"`
 }

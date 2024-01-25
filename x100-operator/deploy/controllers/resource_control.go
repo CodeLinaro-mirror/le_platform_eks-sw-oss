@@ -844,6 +844,9 @@ func TransformModule(obj *kmmv1.Module, config *xcardv1.X100ManagementPolicySpec
     log.Log.Info("Transform KModule: ENTERED function")
     obj.Spec.ModuleLoader.Container.KernelMappings[0].ContainerImage = config.X100Resources.KModule.KModuleImagePath()
     obj.Spec.ModuleLoader.Container.KernelMappings[0].Build.BuildArgs[0].Value = config.X100Resources.KModule.Tag
+    obj.Spec.ModuleLoader.Container.KernelMappings[0].Build.BuildArgs[1].Value = config.X100Resources.KModule.DtkAutoImage
+    obj.Spec.ModuleLoader.Container.KernelMappings[0].Build.BuildArgs[2].Value = config.X100Resources.KModule.DtkSrcImage
+
     obj.Spec.ModuleLoader.Container.ImagePullPolicy = corev1.PullAlways
 
     log.Log.Info("Transform KModule: after ContainerImage")

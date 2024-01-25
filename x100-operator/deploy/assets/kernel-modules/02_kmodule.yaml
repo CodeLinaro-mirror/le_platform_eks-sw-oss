@@ -10,17 +10,17 @@ spec:
         moduleName: csm_dp
       kernelMappings:
         - regexp: '^.+$'
-          containerImage: #"Replace"
+          containerImage: #ToBeReplacedbyController
           build:
             buildArgs:
             - name: LONG_AU_TAG
               value: #ToBeReplacedbyController
             - name: DTK_AUTO
-              value: #ToBeReplaced
+              value: #ToBeReplacedbyController
             - name: DTK_SRC
-              value: #ToBeReplaced
+              value: #ToBeReplacedbyController
             dockerfileConfigMap:
-              name: csm-x100-kmmdockerfile
+              name: #ToBeReplacedbyController
               namespace: x100-operator-resources
   imageRepoSecret:
     name: eks-pull-secret
