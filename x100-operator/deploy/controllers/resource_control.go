@@ -812,6 +812,9 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
             obj.Spec.Template.Spec.ImagePullSecrets = append(obj.Spec.Template.Spec.ImagePullSecrets, corev1.LocalObjectReference{Name: secret})
         }
     }
+    obj.Spec.Template.Spec.Containers[0].Env[0].Name = "SWVERSION_FROMCRD"
+    obj.Spec.Template.Spec.Containers[0].Env[0].Value = config.SwVersion
+
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
     if len(config.NodeSelectors) == 0 {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue

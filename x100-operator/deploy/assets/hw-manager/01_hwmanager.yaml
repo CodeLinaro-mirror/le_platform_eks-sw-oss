@@ -40,6 +40,9 @@ spec:
           preStop:
             exec:
               command: ["/bin/bash", "-c", "rm -rf /var/tmp/hwmgr-running"]
+        env:
+        - name: "SWVERSION_FROMCRD"
+          value: "default"
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged
@@ -54,7 +57,7 @@ spec:
         - name: sys-bus
           mountPath: /sys/bus/pci/devices
         - name: sys-devices
-          mountPath: /sys/devices          
+          mountPath: /sys/devices
       - name: csm-x100-hwmanager-logs1
         image: public.ecr.aws/docker/library/ubuntu:22.04
         imagePullPolicy: IfNotPresent
