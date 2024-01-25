@@ -1,0 +1,36 @@
+apiVersion: qualcomm.com/v1
+kind: X100ManagementPolicy
+metadata:
+  name: x100managementpolicy-v2
+spec:
+  swVersion: v2
+  nodeSelectors:
+  - <Node-Name>
+  x100Resources:
+    firmware:
+      repository: #<CIR registry URL>
+      image: fwpod
+      version: v2
+      imagePullPolicy: Always
+      imagePullSecrets:
+      - eks-pull-secret
+    hwManager:
+      repository: #<CIR registry URL>
+      image: hwmgr
+      version: v2
+      imagePullPolicy: Always
+      imagePullSecrets:
+      - eks-pull-secret
+    kModule:
+      repository: #<CIR registry URL>
+      image: kmodules
+      version: v2
+      tag: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.255
+      imageRepoSecret: eks-pull-secret
+    devicePlugin:
+      repository: #<CIR registry URL>
+      image: csmdp
+      version: v2
+      imagePullPolicy: Always
+      imagePullSecrets:
+      - eks-pull-secret
