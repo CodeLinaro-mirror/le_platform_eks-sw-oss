@@ -802,9 +802,11 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
 
     // update image
     obj.Spec.Template.Spec.Containers[0].Image = config.X100Resources.HwManager.ImagePath()
+    obj.Spec.Template.Spec.Containers[3].Image = config.X100Resources.HwManager.ExpImagePath()
     // update image pull policy
     if config.X100Resources.HwManager.ImagePullPolicy != "" {
         obj.Spec.Template.Spec.Containers[0].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
+	obj.Spec.Template.Spec.Containers[3].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
     }
 
     if len(config.X100Resources.HwManager.ImagePullSecrets) > 0 {
@@ -823,6 +825,7 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
     log.Log.Info("TranformHwMgr: ", "Image0 :", obj.Spec.Template.Spec.Containers[0].Image)
     log.Log.Info("TranformHwMgr: ", "Image1 :", obj.Spec.Template.Spec.Containers[1].Image)
     log.Log.Info("TranformHwMgr: ", "Image2 :", obj.Spec.Template.Spec.Containers[2].Image)
+    log.Log.Info("TranformHwMgr: ", "Image3 :", obj.Spec.Template.Spec.Containers[3].Image)
     log.Log.Info("TranformHwMgr: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
     log.Log.Info("TranformHwMgr: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
 

@@ -1,10 +1,10 @@
 apiVersion: qualcomm.com/v1
 kind: X100ManagementPolicy
 metadata:
-  name: x100managementpolicy-default
+  name: x100managementpolicy-default #don't modify for default version of deployment
 spec:
-  swVersion: default
-  nodeSelectors: #Leave the nodeSelectors list empty for default swversion
+  swVersion: default  #don't modify for the default version of deployment
+  nodeSelectors:      #Don't modify the nodeSelectors list for default swversion
   x100Resources:
     firmware:
       repository: #<CIR registry URL>
@@ -17,6 +17,9 @@ spec:
       repository: #<CIR registry URL>
       image: hwmgr
       version: default
+      expRepository: #<CIR registry URL>
+      expImage: exporter
+      expVersion: default
       imagePullPolicy: Always
       imagePullSecrets:
       - eks-pull-secret
@@ -25,6 +28,8 @@ spec:
       image: kmodules
       version: default
       tag: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.255
+      dtkAutoImage: #<CIR registry URL>/dtk-auto-image
+      dtkSrcImage: #<CIR registry URL>/dtk-src:default
       imageRepoSecret: eks-pull-secret
     devicePlugin:
       repository: #<CIR registry URL>

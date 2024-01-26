@@ -5,7 +5,7 @@ metadata:
 spec:
   swVersion: v1
   nodeSelectors:
-  - <Node-Name>
+  - <Node-Name> #ToBeReplaced
   x100Resources:
     firmware:
       repository: #<CIR registry URL>
@@ -18,6 +18,9 @@ spec:
       repository: #<CIR registry URL>
       image: hwmgr
       version: v1
+      expRepository: #<CIR registry URL>
+      expImage: exporter
+      expVersion: v1
       imagePullPolicy: Always
       imagePullSecrets:
       - eks-pull-secret
@@ -25,7 +28,9 @@ spec:
       repository: #<CIR registry URL>
       image: kmodules
       version: v1
-      tag: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.255
+      tag: AU_LINUX_EMBEDDED_LE.LNXHOSTSW.2.0_TARGET_ALL.01.404.259
+      dtkAutoImage: #<CIR registry URL>/<dtk-auto-image>
+      dtkSrcImage: #<CIR registry URL>/<dtk-src-image>:v1
       imageRepoSecret: eks-pull-secret
     devicePlugin:
       repository: #<CIR registry URL>

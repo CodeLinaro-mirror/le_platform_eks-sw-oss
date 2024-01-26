@@ -56,6 +56,12 @@ type ComponentSpec struct {
     Image string `json:"image"`
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
     Version string `json:"version"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.\-\/]+
+    ExpRepository string `json:"expRepository,omitempty"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
+    ExpImage string `json:"expImage,omitempty"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
+    ExpVersion string `json:"expVersion,omitempty"`
     // Image pull policy
     // +kubebuilder:validation:Optional
     // +operator-sdk:gen-csv:customresourcedefinitions.specDescriptors=true
@@ -151,6 +157,13 @@ func (c *ComponentSpec) ImagePath() string {
         return c.Repository + "/" + c.Image + "@" + c.Version
     }
     return c.Repository + "/" + c.Image + ":" + c.Version
+}
+
+func (c *ComponentSpec) ExpImagePath() string {
+    if strings.HasPrefix(c.Version, "sha256:") {
+        return c.ExpRepository + "/" + c.ExpImage + "@" + c.ExpVersion
+    }
+    return c.ExpRepository + "/" + c.ExpImage + ":" + c.ExpVersion
 }
 
 // Mark the pull policy based on string representation

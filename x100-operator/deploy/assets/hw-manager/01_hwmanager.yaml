@@ -82,13 +82,13 @@ spec:
         image: <exporter container image>
         imagePullPolicy: Always
         volumeMounts:
-        - name:varlog
-          mountpath: /var/log
+        - name: varlog
+          mountPath: /var/log
         args:
         - python3
         - /usr/bin/exporter.py
-        - --i 10
-        - --p 9445
+        - -i 10
+        - -p 9445
       hostNetwork: true
       volumes:
       - name: fwclasspath
