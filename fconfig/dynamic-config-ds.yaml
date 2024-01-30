@@ -20,6 +20,15 @@ spec:
       - name: csm-x100-fconfig
         image: #<ToBeReplaced with fconfig container image>
         imagePullPolicy: Always
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/bash", "-c", "rm -rf /var/tmp/lassenconfig /var/tmp/vf-count.conf"]
+        env:
+          - name: DYNAMICCONFIG_PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged

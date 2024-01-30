@@ -23,6 +23,7 @@ import (
     goerrors "errors"
     "fmt"
     "os"
+    "strings"
 
     kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
     secv1 "github.com/openshift/api/security/v1"
@@ -43,7 +44,7 @@ import (
 var NamePrefixes = map[string]string{
 	"firmware":     "csm-x100fw-daemonset",
 	"HwManager":    "csm-x100hwmgr-daemonset",
-	"kmodules":     "csm-x100kmodules",
+	"kmodules":     "csm-x100-kmm",
 	"kmmConfigMap": "csm-x100kmodules-configmap",
 	"devicePlugin": "csm-x100-dpds",
 }
@@ -51,7 +52,7 @@ var NamePrefixes = map[string]string{
 var PodNamePrefixes = map[string]string{
 	"firmware":     "csm-x100fw",
 	"HwManager":    "csm-x100hwmgr",
-	"kmodules":     "csm-x100kmodules",
+	"kmodules":     "csm-x100-kmm",
 	"kmmConfigMap": "csm-x100kmodules-configmap",
 	"devicePlugin": "csmx100-dp",
 }
@@ -103,6 +104,15 @@ func getUniqueNameForResource(res_name string, sw_ver string) string {
 	}
 
 	return name
+}
+
+func getdsLabel(dsname string) string {
+    for k, v := range NamePrefixes {
+        if strings.Contains(dsname, v)  {
+            return PodNamePrefixes[k]
+        }
+    }
+    return ""
 }
 
 func createServiceAccount(n ControllerState, res corev1.ServiceAccount) (xcardv1.State, error) {
@@ -494,7 +504,7 @@ func labelHwMgrRunningState(n ControllerState, res appsv1.DaemonSet) {
     }
     name = getUniqueNameForResource(name, n.x100Policy.Spec.SwVersion)
     log.Log.Info("labelHwMgrRunningState ", "-",namespace, "-", name)
-    isHwMgrPodReady("app", name, n, "Running")
+    isHwMgrPodReady("app", getdsLabel(name), n, "Running")
 }
 
 func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, error) {
@@ -517,13 +527,13 @@ func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, er
 	    if err := n.rec.Update(context.TODO(), robj); err != nil {
 	       logger.Info("Update of DS triggered")
 	    }
-            return isDaemonSetReady(name, n), nil
+            return isDaemonSetReady(getdsLabel(name), n), nil
         }
         logger.Info("Couldn't create", "Error", err)
         return xcardv1.NotOperational, err
     }
 
-    return isDaemonSetReady(name, n), nil
+    return isDaemonSetReady(getdsLabel(name), n), nil
 }
 
 func createDeployment(n ControllerState, res appsv1.Deployment) (xcardv1.State, error) {
@@ -762,9 +772,9 @@ func TransformFirmware(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPoli
     dsName := getUniqueNameForResource(obj.GetName(), config.SwVersion)
     obj.ObjectMeta.Name = dsName
     log.Log.Info("TransformFirmware", "Daemonset Name :", obj.ObjectMeta.Name)
-    obj.ObjectMeta.Labels["app"] = dsName
-    obj.Spec.Selector.MatchLabels["app"] = dsName
-    obj.Spec.Template.ObjectMeta.Labels["app"] = dsName
+    obj.ObjectMeta.Labels["app"] = PodNamePrefixes["firmware"]
+    obj.Spec.Selector.MatchLabels["app"] = PodNamePrefixes["firmware"]
+    obj.Spec.Template.ObjectMeta.Labels["app"] = PodNamePrefixes["firmware"]
     // update image
     obj.Spec.Template.Spec.Containers[0].Image = config.X100Resources.Firmware.ImagePath()
     // update image pull policy
@@ -796,9 +806,9 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
    obj.ObjectMeta.Name = dsName
    log.Log.Info("TransformHWManager", "Daemonset Name :", obj.ObjectMeta.Name)
 
-   obj.ObjectMeta.Labels["app"] = dsName
-   obj.Spec.Selector.MatchLabels["app"] = dsName
-   obj.Spec.Template.ObjectMeta.Labels["app"] = dsName
+   obj.ObjectMeta.Labels["app"] = PodNamePrefixes["HwManager"]
+   obj.Spec.Selector.MatchLabels["app"] = PodNamePrefixes["HwManager"]
+   obj.Spec.Template.ObjectMeta.Labels["app"] = PodNamePrefixes["HwManager"]
 
     // update image
     obj.Spec.Template.Spec.Containers[0].Image = config.X100Resources.HwManager.ImagePath()
@@ -815,7 +825,14 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
         }
     }
     obj.Spec.Template.Spec.Containers[0].Env[0].Name = "SWVERSION_FROMCRD"
-    obj.Spec.Template.Spec.Containers[0].Env[0].Value = config.SwVersion
+    sv := config.SwVersion
+    fv := config.X100Resources.Firmware.Version
+    hv := config.X100Resources.HwManager.Version
+    ev := config.X100Resources.HwManager.ExpVersion
+    kv := config.X100Resources.KModule.Version
+    dv := config.X100Resources.DevicePlugin.Version
+    env_val := fmt.Sprintf("%s:{Firmware:%s HwManager:%s Exporter:%s KModules:%s DevicePlugin:%s}", sv, fv, hv, ev, kv, dv)
+    obj.Spec.Template.Spec.Containers[0].Env[0].Value = env_val
 
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
     if len(config.NodeSelectors) == 0 {
@@ -874,9 +891,9 @@ func TransformDevicePlugin(obj *appsv1.DaemonSet, config *xcardv1.X100Management
 	obj.ObjectMeta.Name = dsName
 	log.Log.Info("TransformDevicePlugin", "Daemonset Name :", obj.ObjectMeta.Name)
 
-	obj.ObjectMeta.Labels["app"] = dsName
-	obj.Spec.Selector.MatchLabels["app"] = dsName
-	obj.Spec.Template.ObjectMeta.Labels["app"] = dsName
+	obj.ObjectMeta.Labels["app"] = PodNamePrefixes["devicePlugin"]
+	obj.Spec.Selector.MatchLabels["app"] = PodNamePrefixes["devicePlugin"]
+	obj.Spec.Template.ObjectMeta.Labels["app"] = PodNamePrefixes["devicePlugin"]
 
     // update image
     obj.Spec.Template.Spec.Containers[0].Image = config.X100Resources.DevicePlugin.ImagePath()

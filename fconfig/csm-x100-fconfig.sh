@@ -6,6 +6,7 @@
 #******************************************************************************/
 
 mkdir -p /var/tmp/lassenconfig
+echo $DYNAMICCONFIG_PODNAME | rev | cut -d- -f2- | rev > /var/tmp/lassenconfig/fconfig-version.log
 bash -c "echo -n /var/lib/firmware > /sys/module/firmware_class/parameters/path"
 /usr/bin/cp -f /etc/DuMgrConfig.txt /var/lib/firmware/qcom/lassen/flatimg/config/.
 /usr/bin/cp -f /etc/DuMgrConfig.txt /var/tmp/lassenconfig/.
