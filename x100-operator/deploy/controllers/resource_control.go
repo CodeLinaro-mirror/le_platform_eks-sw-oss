@@ -59,7 +59,7 @@ var PodNamePrefixes = map[string]string{
 const (
 	FirmwareDsName     = "csm-x100-firmware-ds"
 	HwManagerDsName    = "csm-x100-hwmanager-ds"
-	KModulesName       = "csm-x100-kmodules-kmm"
+	KModulesName       = "csm-x100-kmm"
 	KModuleCMName      = "csm-x100-kmmdockerfile"
 	DevicePluginDsName = "csm-x100-deviceplugin-ds"
 )
@@ -714,7 +714,7 @@ func isDaemonSetReady(name string, n ControllerState) xcardv1.State {
 func preProcessModule(obj *kmmv1.Module, n ControllerState) {
     // Add all daemonsets here to define a mapping
     transformations := map[string]func(*kmmv1.Module, *xcardv1.X100ManagementPolicySpec, ControllerState) error{
-        "csm-x100-kmodules-kmm": TransformModule,
+        "csm-x100-kmm": TransformModule,
     }
 
     t, ok := transformations[obj.Name]

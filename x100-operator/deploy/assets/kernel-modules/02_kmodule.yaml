@@ -1,7 +1,7 @@
 apiVersion: kmm.sigs.x-k8s.io/v1beta1
 kind: Module
 metadata:
-  name: csm-x100-kmodules-kmm
+  name: csm-x100-kmm
   namespace: x100-operator-resources
 spec:
   moduleLoader:
