@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: x100-operator-resources
-  labels:
-    app.kubernetes.io/component: "x100-operator"

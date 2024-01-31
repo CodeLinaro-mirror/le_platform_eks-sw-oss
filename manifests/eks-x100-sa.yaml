@@ -1,5 +1,0 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: csm-x100boot-eks-sa
-  namespace: x100-operator-resources
