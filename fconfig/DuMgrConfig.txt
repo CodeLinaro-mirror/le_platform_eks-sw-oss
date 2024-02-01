@@ -5,6 +5,21 @@
      -->
     <qdu_version>10</qdu_version>
     <!--
+    QDU_IDLE_MODE            = 0, //IDLE mode used for other modules to perofrm unit test
+    QDU_MISSION_MODE         = 1, // It is default mode of Q6 bringup
+    QDU_DMA_LOOPBACK_MODE    = 2, // DMA loopback mode
+    QDU_DMA_TEST_MODE        = 3  // DMA module specific test mode
+         -->
+    <qdu_mode>3</qdu_mode>
+    <!--
+    Internal: QDU mode value is applicable to only when QDU mode is 3 and it is internal to DMA.
+        -->
+    <qdu_mode_val>0</qdu_mode_val>
+    <!--
+    Internal: for internal debug
+        -->
+    <internal_debug_mode> 1 </internal_debug_mode>
+    <!--
     Enable Spatial Processing functionality required for SRS based dynamic BF
         0: FALSE
         1: TRUE

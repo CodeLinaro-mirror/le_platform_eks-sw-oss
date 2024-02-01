@@ -3,7 +3,7 @@ FROM public.ecr.aws/docker/library/ubuntu:22.04
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        software-properties-common \
-       rsyslog \
+       rsyslog bash rsync \
     && apt-get clean
 
 COPY --chown=bin csm-x100-fconfig.sh /usr/bin

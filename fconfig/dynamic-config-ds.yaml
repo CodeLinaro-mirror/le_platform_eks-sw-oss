@@ -23,7 +23,7 @@ spec:
         lifecycle:
           preStop:
             exec:
-              command: ["/bin/bash", "-c", "rm -rf /var/tmp/lassenconfig /var/tmp/vf-count.conf"]
+              command: ["/bin/bash", "-c", "rm -rf /var/tmp/lassenconfig /var/tmp/vf-count.conf /var/tmp/fconfig-state.conf"]
         env:
           - name: DYNAMICCONFIG_PODNAME
             valueFrom:
