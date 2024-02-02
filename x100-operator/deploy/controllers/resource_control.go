@@ -444,9 +444,6 @@ func createModule(n ControllerState, res kmmv1.Module) (xcardv1.State, error) {
     if err := n.rec.Create(context.TODO(), robj); err != nil {
         if errors.IsAlreadyExists(err) {
             logger.Info("Resource exists from an earlier iteration, Updates if any changes are present")
-            if err := n.rec.Update(context.TODO(), robj); err != nil {
-               logger.Info("Update of Module triggered")
-            }
             return isPodReady("kmm.node.kubernetes.io/module.name", ModuleIdentifierLabelValue, n, "Running"), nil
         }
         logger.Info("Couldn't create", "Error", err)
@@ -523,11 +520,8 @@ func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, er
     // Create the resource from decoded manifest object
     if err := n.rec.Create(context.TODO(), robj); err != nil {
         if errors.IsAlreadyExists(err) {
-            logger.Info("Found Resource")
-	    if err := n.rec.Update(context.TODO(), robj); err != nil {
-	       logger.Info("Update of DS triggered")
-	    }
-            return isDaemonSetReady(getdsLabel(name), n), nil
+            logger.Info(fmt.Sprintf("Resource %s exists from an earlier iteration of reconcile loop", name))
+	    return isDaemonSetReady(getdsLabel(name), n), nil
         }
         logger.Info("Couldn't create", "Error", err)
         return xcardv1.NotOperational, err
