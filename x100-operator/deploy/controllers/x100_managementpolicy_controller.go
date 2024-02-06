@@ -40,7 +40,6 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/predicate"
     "sigs.k8s.io/controller-runtime/pkg/reconcile"
     "sigs.k8s.io/controller-runtime/pkg/source"
-
     xcardv1 "x100-operator/api/v1"
 )
 
@@ -53,15 +52,6 @@ type X100ManagementPolicyReconciler struct {
     Scheme *runtime.Scheme
 }
 
-func removeFromSlice(s []string, r string) []string {
-    for i, v := range s {
-        if v == r {
-            return append(s[:i], s[i+1:]...)
-        }
-    }
-    return s
-}
-
 func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance *xcardv1.X100ManagementPolicy) error {
     opts := []client.ListOption{}
     list := &corev1.NodeList{}
@@ -72,22 +62,22 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
     for _, node := range list.Items {
         labels := node.GetLabels()
         if hasActiveCRDLabel(labels, policyInstance.ObjectMeta.Name) {
-        labels = cleanupStaleCRDLabels(labels)
-	if policyInstance.Spec.SwVersion != "default" {
-	   labels = attachDefaultSWLabels(labels)
-	}
-        node.SetLabels(labels)
-        err = r.Update(context.TODO(), &node)
-        if err != nil {
-            return fmt.Errorf("Unable to Delete node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
-        }
+            labels = cleanupStaleCRDLabels(labels)
+	    if policyInstance.Spec.SwVersion != "default" {
+	        labels = attachDefaultSWLabels(labels)
+	    }
+            node.SetLabels(labels)
+            err = r.Update(context.TODO(), &node)
+            if err != nil {
+                return fmt.Errorf("Unable to Delete node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+            }
         }
     }
     return nil
 }
 
 func (r *X100ManagementPolicyReconciler) deleteExternalResources(policyInstance *xcardv1.X100ManagementPolicy) error {
-    //
+
     // delete any external resources associated with the CR
     // Ensure that delete implementation is idempotent and safe to invoke
     // multiple times for same object.

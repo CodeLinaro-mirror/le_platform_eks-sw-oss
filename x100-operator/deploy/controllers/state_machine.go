@@ -28,136 +28,6 @@ import (
     xcardv1 "x100-operator/api/v1"
 )
 
-const (
-    x100LabelKey   = "qualcomm.com/x100.present"
-    x100LabelValue = "true"
-    x100activecrdKey = "qualcomm.com/x100.activecrd"
-    x100swversionKey = "qualcomm.com/x100.swversion"
-    x100swvdefaultKey = "qualcomm.com/x100.swvdefault"
-    x100swvdefaultValue = "true"
-    x100swvNondefaultKey = "qualcomm.com/x100.swvNondefault"
-    x100swvNondefaultValue = "true"
-)
-
-var x100crdLabels = []string{
-   x100swversionKey,
-   x100swvdefaultKey,
-   x100swvNondefaultKey,
-   x100activecrdKey,
-   x100HwMgrRunning,
-   x100LabelKey,
-}
-
-
-const (
-	SoftwareVersionSeperator = "-"
-)
-
-var x100NodeLabels = map[string]string{
-    "feature.node.kubernetes.io/pci-1200_17cb_0600.present": "true",
-    "feature.node.kubernetes.io/pci-1200_17cb_0601.present": "true",
-}
-
-// States for the controller state machine
-const (
-    startState = iota
-    iterateAssetsState
-    createResourcesState
-    endState
-)
-
-// Sequence below is in terms of dependencies
-// Modify accordingly when adding new assets
-var assets = []string{
-    "/opt/x100-operator/init-tasks",
-    "/opt/x100-operator/nfd-configuration",
-    "/opt/x100-operator/firmware",
-    "/opt/x100-operator/hw-manager",
-    "/opt/x100-operator/kernel-modules",
-    "/opt/x100-operator/device-plugin",
-}
-
-type ControllerState struct {
-    currentState      int
-    desiredState      int
-    currentAsset      string
-    workerNeedsReboot bool
-    assets            []string
-    x100Policy        *xcardv1.X100ManagementPolicy
-    rec               *X100ManagementPolicyReconciler
-}
-
-func cleanupStaleLabels(labels map[string]string) map[string]string {
-   //Delete all the labels related to x100 on Operator Clean-up(or controller exit)
-   return labels
-}
-
-func attachDefaultSWLabels(labels map[string]string) map[string]string {
-   labels[x100swversionKey] = "default"
-   labels[x100swvdefaultKey] = "true"
-   labels[x100activecrdKey] = "x100managementpolicy-default"
-   return labels
-}
-
-func cleanupStaleCRDLabels(labels map[string]string) map[string]string {
-    for _, label := range x100crdLabels {
-        if _, ok := labels[label]; ok {
-	   delete(labels, label)
-	}
-    }
-    return labels
-}
-
-func isrunningDefaultSW(labels map[string]string) bool {
-    if _, ok := labels[x100swvdefaultKey]; ok {
-        if labels[x100swvdefaultKey] == x100swvdefaultValue {
-            // node is running with defaultSW
-            return true
-        }
-    }
-    return false
-}
-
-func isrunningNonDefaultSW(labels map[string]string) bool {
-    if _, ok := labels[x100swvNondefaultKey]; ok {
-        if labels[x100swvNondefaultKey] == x100swvNondefaultValue {
-            // node is running with Non-defaultSW
-            return true
-        }
-    }
-    return false
-}
-
-func hasActiveCRDLabel(labels map[string]string, currentCRName string) bool {
-    if _, ok := labels[x100activecrdKey]; ok {
-        if labels[x100activecrdKey] == currentCRName {
-            return true
-        }
-    }
-    return false
-}
-func hasCustomX100Label(labels map[string]string) bool {
-    if _, ok := labels[x100LabelKey]; ok {
-        if labels[x100LabelKey] == x100LabelValue {
-            return true
-        }
-    }
-    return false
-}
-
-func hasX100PCILabels(labels map[string]string) bool {
-
-    for key, val := range labels {
-        if _, ok := x100NodeLabels[key]; ok {
-            if x100NodeLabels[key] == val {
-                log.Log.Info("Found x100PCILabels")
-                return true
-            }
-        }
-    }
-    return false
-}
-
 func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 
     // fetch all nodes in the cluster
@@ -318,6 +188,7 @@ func (c *ControllerState) createResources() (int, xcardv1.State, error) {
 
     result := xcardv1.Operational
     for _, robj := range asset.objectMappings {
+        isHwMgrPodReady("app", "csm-x100hwmgr", *c, "Running")
         cardstate, err := createKindResource(*c, robj.key, robj.value)
         if err != nil {
             return endState, cardstate, err
