@@ -581,7 +581,7 @@ func TransformFirmware(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPoli
         }
     }
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
+    if len(config.NodeSelector) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
@@ -627,7 +627,7 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
     obj.Spec.Template.Spec.Containers[0].Env[0].Value = env_val
 
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
+    if len(config.NodeSelector) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
@@ -666,7 +666,7 @@ func TransformModule(obj *kmmv1.Module, config *xcardv1.X100ManagementPolicySpec
         obj.Spec.ImageRepoSecret = &corev1.LocalObjectReference{Name: config.X100Resources.KModule.ImageRepoSecret}
     }
     obj.Spec.Selector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
+    if len(config.NodeSelector) == 0 && config.SwVersion == "default" {
        obj.Spec.Selector[x100swvdefaultKey] = x100swvdefaultValue
     }
     obj.Spec.Selector[x100HwMgrRunning] = "true"
@@ -700,7 +700,7 @@ func TransformDevicePlugin(obj *appsv1.DaemonSet, config *xcardv1.X100Management
         }
     }
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
+    if len(config.NodeSelector) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 

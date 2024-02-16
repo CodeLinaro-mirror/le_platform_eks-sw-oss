@@ -81,7 +81,7 @@ func (r *X100ManagementPolicyReconciler) deleteExternalResources(policyInstance 
     // delete any external resources associated with the CR
     // Ensure that delete implementation is idempotent and safe to invoke
     // multiple times for same object.
-    log.Log.Info("FINALIZER invoked the clean-up logic",policyInstance.ObjectMeta.Name, policyInstance.Spec.NodeSelectors)
+    log.Log.Info("FINALIZER invoked the clean-up logic",policyInstance.ObjectMeta.Name, policyInstance.Spec.NodeSelector)
     //Fetch all the nodes in cluster. For each node, see if the activecrd is current policyInstance,
     //then delete all x100 related labels(if the crd is not current, skip the node)
     err := r.clearLabelsOnCrDeletion(policyInstance)

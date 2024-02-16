@@ -73,7 +73,7 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 func (c *ControllerState) labelX100NodeswithCRDFields(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 
     log.Log.Info("Entering labelX100NodeswithCRDFields() ")
-    nodeSelectorsListfromcrd := policySpec.NodeSelectors
+    nodeSelectorsListfromcrd := policySpec.NodeSelector
     log.Log.Info("labelX100NodeswithCRDFields()- ","Nodes list length from CRD- ",len(nodeSelectorsListfromcrd))
     if len(nodeSelectorsListfromcrd) == 0 && policySpec.SwVersion == "default" {
         // fetch all nodes in the cluster
@@ -171,8 +171,8 @@ func (c *ControllerState) labelX100NodeswithCRDFields(policy *xcardv1.X100Manage
                         for _, policy := range crlist.Items {
                             currCR, _ := getActiveCRonNode(labels)
                             if policy.ObjectMeta.GetName() == currCR && c.x100Policy.ObjectMeta.Name != policy.ObjectMeta.GetName() {
-                                //delete the Node from policyObject.Spec.NodeSelectors[]
-                                pnodes := policy.Spec.NodeSelectors
+                                //delete the Node from policyObject.Spec.NodeSelector[]
+                                pnodes := policy.Spec.NodeSelector
                                 var ind int
                                 for i, pnode := range pnodes {
                                     if pnode == node.ObjectMeta.Name {
@@ -180,7 +180,7 @@ func (c *ControllerState) labelX100NodeswithCRDFields(policy *xcardv1.X100Manage
                                         break
                                     }
                                 }
-                                policy.Spec.NodeSelectors = append(policy.Spec.NodeSelectors[:ind], policy.Spec.NodeSelectors[ind+1:]...)
+                                policy.Spec.NodeSelector = append(policy.Spec.NodeSelector[:ind], policy.Spec.NodeSelector[ind+1:]...)
                                 c.rec.Update(context.TODO(), &policy)
                                 //Update the CR back with context.TODO()
                                 labels = node.GetLabels()

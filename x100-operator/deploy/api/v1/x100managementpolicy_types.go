@@ -39,7 +39,7 @@ type X100ManagementPolicySpec struct {
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.\-\/]+
     SwVersion           string           `json:"swVersion"`
     EnableRollback      bool             `json:"enableRollback"`
-    NodeSelectors       []string         `json:"nodeSelectors,omitempty"`
+    NodeSelector       []string         `json:"nodeSelector,omitempty"`
     X100Resources       X100ResourceSpec `json:"x100Resources"`
 }
 
