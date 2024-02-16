@@ -81,6 +81,9 @@ spec:
       - name: csm-x100-exporter
         image: <exporter container image>
         imagePullPolicy: Always
+        ports:
+        - name: x100-exporter
+          containerPort: 9445
         volumeMounts:
         - name: varlog
           mountPath: /var/log
