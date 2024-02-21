@@ -9,14 +9,14 @@
 set -e
 
 # Script needs both source and destination paths as argument
-if [[ $# -lt 2 ]]; then
-    echo "Usage: $0 <source_path> <destination_path>"
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <source_path>"
     exit 1
 fi
 
 SOURCE_PATH=$1
-DEST_PATH=$2
-
+DEST_PATH=$SOURCE_PATH/x100-operator
+mkdir -p $DEST_PATH
 # Clean the destination or else it will fail
 rm -rf  $DEST_PATH/*
 
