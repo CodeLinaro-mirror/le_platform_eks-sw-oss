@@ -1,4 +1,4 @@
-# # Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+# # Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
 # # SPDX-License-Identifier: BSD-3-Clause-Clear
 
 # # Copyright 2023.
@@ -141,6 +141,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	podman build -t ${IMG} .
+	kustomize build ./config/default/ > x100-operator-deploy.yaml
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
