@@ -7,7 +7,7 @@ RUN apt-get update \
     && apt-get clean
 
 COPY --chown=bin csm-x100-fconfig.sh /usr/bin
-COPY --chmod=777 DuMgrConfig.txt /etc/.
-COPY --chmod=777 splane_cfg.conf /etc/.
+COPY --chmod=777 config /etc/config
 COPY --chmod=777 vf-count.conf /etc/.
+
 CMD ["/usr/bin/csm-x100-fconfig.sh"]
