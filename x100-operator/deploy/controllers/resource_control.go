@@ -581,13 +581,13 @@ func TransformFirmware(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPoli
         }
     }
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 {
+    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
     log.Log.Info("TranformFirmware: ", "Image :", obj.Spec.Template.Spec.Containers[0].Image)
-    log.Log.Info("TranformFirmware: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
-    log.Log.Info("TranformFirmware: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
+    //log.Log.Info("TranformFirmware: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+    //log.Log.Info("TranformFirmware: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
 
     return nil
 }
@@ -627,16 +627,16 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
     obj.Spec.Template.Spec.Containers[0].Env[0].Value = env_val
 
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 {
+    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
-    log.Log.Info("TranformHwMgr: ", "Image0 :", obj.Spec.Template.Spec.Containers[0].Image)
-    log.Log.Info("TranformHwMgr: ", "Image1 :", obj.Spec.Template.Spec.Containers[1].Image)
-    log.Log.Info("TranformHwMgr: ", "Image2 :", obj.Spec.Template.Spec.Containers[2].Image)
-    log.Log.Info("TranformHwMgr: ", "Image3 :", obj.Spec.Template.Spec.Containers[3].Image)
-    log.Log.Info("TranformHwMgr: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
-    log.Log.Info("TranformHwMgr: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
+    log.Log.Info("TranformHwMgr: ",  "HwMgr :", obj.Spec.Template.Spec.Containers[0].Image)
+    //log.Log.Info("TranformHwMgr: ", "Image1 :", obj.Spec.Template.Spec.Containers[1].Image)
+    //log.Log.Info("TranformHwMgr: ", "Image2 :", obj.Spec.Template.Spec.Containers[2].Image)
+    log.Log.Info("TranformHwMgr: ", "Exporter :", obj.Spec.Template.Spec.Containers[3].Image)
+    //log.Log.Info("TranformHwMgr: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+    //log.Log.Info("TranformHwMgr: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
 
     return nil
 }
@@ -653,7 +653,7 @@ func TransformModule(obj *kmmv1.Module, config *xcardv1.X100ManagementPolicySpec
 
 
     // update image
-    log.Log.Info("Transform KModule: ENTERED function")
+    //log.Log.Info("Transform KModule: ENTERED function")
     obj.Spec.ModuleLoader.Container.KernelMappings[0].ContainerImage = config.X100Resources.KModule.KModuleImagePath()
     obj.Spec.ModuleLoader.Container.KernelMappings[0].Build.BuildArgs[0].Value = config.X100Resources.KModule.Tag
     obj.Spec.ModuleLoader.Container.KernelMappings[0].Build.BuildArgs[1].Value = config.X100Resources.KModule.DtkAutoImage
@@ -661,12 +661,12 @@ func TransformModule(obj *kmmv1.Module, config *xcardv1.X100ManagementPolicySpec
 
     obj.Spec.ModuleLoader.Container.ImagePullPolicy = corev1.PullAlways
 
-    log.Log.Info("Transform KModule: after ContainerImage")
+    //log.Log.Info("Transform KModule: after ContainerImage")
     if len(config.X100Resources.KModule.ImageRepoSecret) > 0 {
         obj.Spec.ImageRepoSecret = &corev1.LocalObjectReference{Name: config.X100Resources.KModule.ImageRepoSecret}
     }
     obj.Spec.Selector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 {
+    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
        obj.Spec.Selector[x100swvdefaultKey] = x100swvdefaultValue
     }
     obj.Spec.Selector[x100HwMgrRunning] = "true"
@@ -700,12 +700,12 @@ func TransformDevicePlugin(obj *appsv1.DaemonSet, config *xcardv1.X100Management
         }
     }
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
-    if len(config.NodeSelectors) == 0 {
+    if len(config.NodeSelectors) == 0 && config.SwVersion == "default" {
        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
     log.Log.Info("TranformDevicePlugin: ", "Image :", obj.Spec.Template.Spec.Containers[0].Image)
-    log.Log.Info("TranformDevicePlugin: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
-    log.Log.Info("TranformDevicePlugin: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
+    //log.Log.Info("TranformDevicePlugin: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+    //log.Log.Info("TranformDevicePlugin: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
     return nil
 }

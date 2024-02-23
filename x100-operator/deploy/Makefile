@@ -144,8 +144,8 @@ docker-build: test ## Build docker image with the manager.
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	podman login -u="vmellemp" -p="5PQY+NB4Jc/8WtwtECTK0R2U8VVLvHyMccCuDLNd7gXY26mwwfSc58vK4APjIMeJ" docker-registry.qualcomm.com
-	podman push ${IMG} docker-registry.qualcomm.com/vmellemp/${IMG}
+	podman login -u="<USER-ID>" -p="<Auth-Token" <docker-registry URL>
+	podman push ${IMG} <docker-registry URL>/<USER-ID>/${IMG}
 
 ##@ Deployment
 
@@ -156,7 +156,7 @@ endif
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
-	kubectl apply -f $(CURDIR)/config/x100-crd/qualcomm_v1_x100managementpolicy.yaml
+	kubectl apply -f $(CURDIR)/config/x100-crd/qualcomm_v1_x100managementpolicy-default.yaml
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

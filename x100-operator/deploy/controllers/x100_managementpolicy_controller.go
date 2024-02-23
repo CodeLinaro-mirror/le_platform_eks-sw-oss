@@ -41,6 +41,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/reconcile"
     "sigs.k8s.io/controller-runtime/pkg/source"
     xcardv1 "x100-operator/api/v1"
+    "k8s.io/client-go/rest"
 )
 
 var x100Ctrl ControllerState
@@ -50,6 +51,8 @@ var x100Ctrl ControllerState
 type X100ManagementPolicyReconciler struct {
     client.Client
     Scheme *runtime.Scheme
+    RESTClient rest.Interface
+    RESTConfig *rest.Config
 }
 
 func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance *xcardv1.X100ManagementPolicy) error {
@@ -63,13 +66,10 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
         labels := node.GetLabels()
         if hasActiveCRDLabel(labels, policyInstance.ObjectMeta.Name) {
             labels = cleanupStaleCRDLabels(labels)
-	    if policyInstance.Spec.SwVersion != "default" {
-	        labels = attachDefaultSWLabels(labels)
-	    }
             node.SetLabels(labels)
             err = r.Update(context.TODO(), &node)
             if err != nil {
-                return fmt.Errorf("Unable to Delete node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+                return fmt.Errorf("Unable to Delete node label for %s , err %s", node.ObjectMeta.Name, err.Error())
             }
         }
     }
@@ -82,7 +82,7 @@ func (r *X100ManagementPolicyReconciler) deleteExternalResources(policyInstance 
     // Ensure that delete implementation is idempotent and safe to invoke
     // multiple times for same object.
     log.Log.Info("FINALIZER invoked the clean-up logic",policyInstance.ObjectMeta.Name, policyInstance.Spec.NodeSelectors)
-    //Fetch all the nodes in cluster. For each node labels map, see if the activecrd is current policyInstance,
+    //Fetch all the nodes in cluster. For each node, see if the activecrd is current policyInstance,
     //then delete all x100 related labels(if the crd is not current, skip the node)
     err := r.clearLabelsOnCrDeletion(policyInstance)
     return err
@@ -91,7 +91,7 @@ func (r *X100ManagementPolicyReconciler) deleteExternalResources(policyInstance 
 // +kubebuilder:rbac:groups=qualcomm.com,resources=*,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=qualcomm.com,resources=x100managementpolicies/finalizers,verbs=update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces;serviceaccounts;pods;services;services/finalizers;endpoints;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces;serviceaccounts;pods;pods/exec;pods/attach;services;services/finalizers;endpoints;secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims;events;configmaps;secrets;nodes;persistentvolumes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;replicasets;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=privileged,verbs=get;list;watch;create;update;patch;delete;use
@@ -104,7 +104,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
     // Loop iterates over the assets that are being managed by the policy
     // Maintains the overall state of the CR to be Operational or NotOperational
 
-    logger := log.Log.WithValues("Reconciling		", req.NamespacedName)
+    logger := log.Log.WithValues("Reconciling: ", req.NamespacedName)
 
     // Fetch the CRD instance
     policyInstance := &xcardv1.X100ManagementPolicy{}
@@ -164,10 +164,6 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 
     for {
         // Trigger the state machine
-	err = x100Ctrl.labelX100NodeswithCRDFields(policyInstance, &policyInstance.Spec)
-        if err != nil {
-             logger.Error(err, "Failed to Label with crdName and crdSwVersion")
-        }
         status, err := x100Ctrl.triggerStateMachine(r, policyInstance)
         if err != nil {
             logger.Error(err, "Failed to initialize X100ManagementPolicy controller and dependencies")
@@ -188,10 +184,13 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
             if err != nil {
                 return ctrl.Result{RequeueAfter: time.Second * 10}, err
             }
-
+            err = x100Ctrl.labelX100NodeswithCRDFields(policyInstance, &policyInstance.Spec)
+            if err != nil {
+                return ctrl.Result{RequeueAfter: time.Second * 10}, err
+            }
             // introduce an artificial sleep to avoid too much looping here
             // Give time to pods to come up
-            time.Sleep(3 * time.Second)
+            time.Sleep(5 * time.Second)
         }
         if x100Ctrl.stateMachineCompleted() {
             break
@@ -204,7 +203,6 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
     }
     // Success case, no need to requeue the request
     updateCRState(r, ctx, req.NamespacedName, overallStatus)
-
     return ctrl.Result{}, nil
 }
 
@@ -230,7 +228,7 @@ func updateCRState(r *X100ManagementPolicyReconciler, ctx context.Context,
 // Create custom event and handler for custom event to watch nodes for label changes
 
 func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.Controller, mgr manager.Manager) error {
-        mapFn := func(ctx context.Context, a client.Object) []reconcile.Request {
+    mapFn := func(ctx context.Context, a client.Object) []reconcile.Request {
         opts := []client.ListOption{}
         list := &xcardv1.X100ManagementPolicyList{}
 
@@ -268,7 +266,8 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
         },
         UpdateFunc: func(e event.UpdateEvent) bool {
             newLabels := e.ObjectNew.GetLabels()
-            log.Log.Info("Node Labels ->", "newLabels: ", newLabels)
+            log.Log.Info("Node Labels Updated - Enque reconcile requests on available CRs")
+            //log.Log.Info("Node Labels ->", "newLabels: ", newLabels)
 
             hasPCILabel := hasX100PCILabels(newLabels)
             hasCustomLabel := hasCustomX100Label(newLabels)
@@ -298,6 +297,18 @@ func (r *X100ManagementPolicyReconciler) SetupWithManager(mgr ctrl.Manager) erro
     if err != nil {
         return err
     }
+    if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Pod{}, "spec.nodeName", func(rawObj client.Object) []string {
+              pod := rawObj.(*corev1.Pod)
+              return []string{pod.Spec.NodeName}
+              }); err != nil {
+              return err
+              }
+    if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Node{}, "metadata.name", func(rawObj client.Object) []string {
+              node := rawObj.(*corev1.Node)
+              return []string{node.ObjectMeta.Name}
+              }); err != nil {
+              return err
+              }
 
     // Watch for changes to primary resource X100ManagementPolicy
     err = c.Watch(source.Kind(mgr.GetCache(), &xcardv1.X100ManagementPolicy{}), &handler.EnqueueRequestForObject{})

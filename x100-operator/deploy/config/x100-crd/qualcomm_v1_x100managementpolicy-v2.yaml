@@ -4,6 +4,7 @@ metadata:
   name: x100managementpolicy-v2
 spec:
   swVersion: v2
+  enableRollback: false
   nodeSelectors:
   - <Node-Name> #ToBeReplaced
   x100Resources:

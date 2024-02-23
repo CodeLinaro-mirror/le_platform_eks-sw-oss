@@ -34,18 +34,29 @@ const (
 )
 
 const (
-    x100HwMgrRunning   = "qualcomm.com/x100.hwmgrRunning"
+    healthLogPath   = "/var/log/healthinfo.log"
+    assetsNamespace = "x100-operator-resources"
 )
 
 const (
-    x100LabelKey   = "qualcomm.com/x100.present"
-    x100LabelValue = "true"
-    x100activecrdKey = "qualcomm.com/x100.activecrd"
-    x100swversionKey = "qualcomm.com/x100.swversion"
-    x100swvdefaultKey = "qualcomm.com/x100.swvdefault"
-    x100swvdefaultValue = "true"
-    x100swvNondefaultKey = "qualcomm.com/x100.swvNondefault"
-    x100swvNondefaultValue = "true"
+    x100LabelKey            = "qualcomm.com/x100.present"
+    x100LabelValue          = "true"
+    x100activecrdKey        = "qualcomm.com/x100.active-cr"
+    x100PriorCr             = "qualcomm.com/x100.prior-cr"
+    x100swversionKey        = "qualcomm.com/x100.swversion"
+    x100swvdefaultKey       = "qualcomm.com/x100.swvdefault"
+    x100swvdefaultValue     = "true"
+    x100swvNondefaultKey    = "qualcomm.com/x100.swvnondefault"
+    x100swvNondefaultValue  = "true"
+    x100HwMgrRunning        = "qualcomm.com/x100.hwmgrRunning"
+    x100CountOnNodekey      = "qualcomm.com/x100.count"
+    x100BootupSuccess       = "qualcomm.com/x100.bootsuccess"
+    x100BootupSuccessCount  = "qualcomm.com/x100.bootsuccesscount"
+    x100BootupFailedCount   = "qualcomm.com/x100.bootfailedcount"
+    x100BootupStatusMarked  = "qualcomm.com/x100.bootstatusmarked"
+    x100Upgrading           = "qualcomm.com/x100.upgrading"
+    x100UpgradeFailed       = "qualcomm.com/x100.sw-upgrade-failed"
+    x100RolledBack          = "qualcomm.com/x100.rolledback"
 )
 
 var x100crdLabels = []string{
@@ -53,8 +64,17 @@ var x100crdLabels = []string{
     x100swvdefaultKey,
     x100swvNondefaultKey,
     x100activecrdKey,
+    x100PriorCr,
     x100HwMgrRunning,
     x100LabelKey,
+    x100CountOnNodekey,
+    x100BootupSuccess,
+    x100BootupSuccessCount,
+    x100BootupFailedCount,
+    x100BootupStatusMarked,
+    x100Upgrading,
+    x100UpgradeFailed,
+    x100RolledBack,
 }
 
 const (
@@ -71,12 +91,15 @@ const (
     startState = iota
     iterateAssetsState
     createResourcesState
+    getBootStatusState
+    rollbackState
     endState
+    earlyExitState
 )
 
 var ModuleIdentifierLabelValue string = "KMODULES_NAME"
 
-// Sequence below is in terms of dependencies
+// Sequence below is in terms with Pod dependencies
 // Modify accordingly when adding new assets
 var assets = []string{
     "/opt/x100-operator/init-tasks",
@@ -88,11 +111,10 @@ var assets = []string{
 }
 
 type ControllerState struct {
-    currentState      int
-    desiredState      int
-    currentAsset      string
-    workerNeedsReboot bool
-    assets            []string
-    x100Policy        *xcardv1.X100ManagementPolicy
-    rec               *X100ManagementPolicyReconciler
+    currentState       int
+    desiredState       int
+    currentAsset       string
+    assets             []string
+    x100Policy         *xcardv1.X100ManagementPolicy
+    rec                *X100ManagementPolicyReconciler
 }

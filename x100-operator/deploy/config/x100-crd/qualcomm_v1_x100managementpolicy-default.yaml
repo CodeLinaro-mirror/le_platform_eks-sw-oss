@@ -4,6 +4,7 @@ metadata:
   name: x100managementpolicy-default #don't modify for default version of deployment
 spec:
   swVersion: default  #don't modify for the default version of deployment
+  enableRollback: false  #don't modify for the default version of deployment
   nodeSelectors:      #Don't modify the nodeSelectors list for default swversion
   x100Resources:
     firmware:

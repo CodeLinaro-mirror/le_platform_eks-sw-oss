@@ -6,14 +6,22 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 package controllers
 
 import (
+    kerrors "k8s.io/apimachinery/pkg/api/errors"
     "sigs.k8s.io/controller-runtime/pkg/log"
     "sigs.k8s.io/controller-runtime/pkg/client"
+    "k8s.io/client-go/tools/remotecommand"
+    "k8s.io/apimachinery/pkg/runtime"
     xcardv1 "x100-operator/api/v1"
     appsv1 "k8s.io/api/apps/v1"
     corev1 "k8s.io/api/core/v1"
     "context"
     "strings"
+    "regexp"
+    "errors"
+    "bytes"
+    "time"
     "fmt"
+    "os"
 )
 
 func LogAndExitOnError(logit string, err error) {
@@ -26,8 +34,13 @@ func LogAndExitOnError(logit string, err error) {
 }
 
 func cleanupStaleLabels(labels map[string]string) map[string]string {
-   //Delete all the labels related to x100 on Operator Clean-up(or controller exit)
-   return labels
+    //Delete all the labels related to x100 on Operator Clean-up(or controller exit)
+    for _, label := range x100crdLabels {
+        if _, ok := labels[label]; ok {
+            delete(labels, label)
+        }
+    }
+    return labels
 }
 
 func attachDefaultSWLabels(labels map[string]string) map[string]string {
@@ -44,6 +57,13 @@ func cleanupStaleCRDLabels(labels map[string]string) map[string]string {
         }
     }
     return labels
+}
+
+func hasPriorCrLabel(labels map[string]string) (string, bool) {
+    if _, ok := labels[x100PriorCr]; ok {
+       return labels[x100PriorCr], true
+    }
+    return "", false
 }
 
 func isrunningDefaultSW(labels map[string]string) bool {
@@ -69,6 +89,65 @@ func isrunningNonDefaultSW(labels map[string]string) bool {
 func hasActiveCRDLabel(labels map[string]string, currentCRName string) bool {
     if _, ok := labels[x100activecrdKey]; ok {
         if labels[x100activecrdKey] == currentCRName {
+            return true
+        }
+    }
+    return false
+}
+
+func isRunningwithcurrCR(labels map[string]string, currentCRName string) bool {
+    if _, ok := labels[x100activecrdKey]; ok {
+        if labels[x100activecrdKey] == currentCRName {
+            return true
+        }
+    }
+    return false
+}
+
+func getActiveCRonNode(labels map[string]string) (string, error) {
+    if _, ok := labels[x100activecrdKey]; ok {
+        return labels[x100activecrdKey], nil
+    }
+    return "", fmt.Errorf("Active CR label not found on current Node")
+}
+
+func hasHwmgrRunningLabel(labels map[string]string) bool {
+    if _, ok := labels[x100HwMgrRunning]; ok {
+        if labels[x100HwMgrRunning] == "true" {
+            return true
+        }
+    }
+    return false
+}
+
+func hasX100BootupSuccessLabel(labels map[string]string) bool {
+    if _, ok := labels[x100BootupSuccess]; ok {
+        if labels[x100BootupSuccess] == "true" {
+            return true
+        }
+    }
+    return false
+}
+
+func isX100BootupStatusMarkedLabelTrue(labels map[string]string) bool {
+    if _, ok := labels[x100BootupStatusMarked]; ok {
+        if labels[x100BootupStatusMarked] == "true" {
+            return true
+        }
+    }
+    return false
+}
+
+func hasX100BootupStatusMarkedLabel(labels map[string]string) bool {
+    if _, ok := labels[x100BootupStatusMarked]; ok {
+        return true
+    }
+    return false
+}
+
+func isx100UpgradingLabelTrue(labels map[string]string) bool {
+    if _, ok := labels[x100Upgrading]; ok {
+        if labels[x100Upgrading] == "true" {
             return true
         }
     }
@@ -152,33 +231,52 @@ func setContainerEnv(c *corev1.Container, key, value string) {
     }
     c.Env = append(c.Env, corev1.EnvVar{Name: key, Value: value})
 }
-func isHwMgrPodReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) bool {
-    opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
 
+func (c *ControllerState) markHealthCheckedforCurrentCR() {
+    currentCR := c.x100Policy.ObjectMeta.Name
+    opts := []client.ListOption{}
+    node_list := &corev1.NodeList{}
+    err := c.rec.List(context.TODO(), node_list, opts...)
+    for _, node := range node_list.Items {
+        labels := node.GetLabels()
+        if isRunningwithcurrCR(labels, currentCR) {
+            if _, ok := labels[x100BootupSuccess]; ok {
+                labels[x100BootupStatusMarked] = "true"
+            }
+            hasX100BootupSuccess := hasX100BootupSuccessLabel(labels)
+            hasx100Upgrading := isx100UpgradingLabelTrue(labels)
+            delete(labels, x100Upgrading)
+            if hasx100Upgrading && !hasX100BootupSuccess {
+                labels[x100UpgradeFailed] = labels[x100swversionKey]
+            }
+            node.SetLabels(labels)
+            err = c.rec.Update(context.TODO(), &node)
+            if err != nil {
+                log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ",x100BootupStatusMarked , err.Error())
+            }
+        }
+    }
+}
+
+func isHwMgrPodReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) bool {
+
+    opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
     list := &corev1.PodList{}
     err := n.rec.List(context.TODO(), list, opts...)
     if err != nil {
         log.Log.Info("Could not get PodList", err)
     }
-    log.Log.Info("DEBUG: Pod", "NumberOfPods", len(list.Items))
     if len(list.Items) == 0 {
         return false
     }
 
-    pd := list.Items[0]
-    if pd.Status.Phase != phase {
-        log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "!=", phase)
-        return false
-    }
     opts = []client.ListOption{}
     node_list := &corev1.NodeList{}
     err = n.rec.List(context.TODO(), node_list, opts...)
 
     for _, pd := range list.Items {
-       //log.Log.Info("DEBUG: isHwMgrPodReady", "Phase", pd.Status.Phase, "==", phase)
-       //log.Log.Info("DEBUG: isHwMgrPodReady", "on Node", pd.Spec.NodeName)
        for _, node := range node_list.Items {
-          if node.ObjectMeta.Name == pd.Spec.NodeName {
+          if node.ObjectMeta.Name == pd.Spec.NodeName &&  pd.Status.Phase == phase{
               labels := node.GetLabels()
               labels[x100HwMgrRunning] = "true"
               node.SetLabels(labels)
@@ -192,6 +290,7 @@ func isHwMgrPodReady(labelkey string, labelvalue string, n ControllerState, phas
     }
     return true
 }
+
 func labelHwMgrRunningState(n ControllerState, res appsv1.DaemonSet) {
     robj := res.DeepCopy()
     namespace := robj.GetNamespace()
@@ -204,6 +303,86 @@ func labelHwMgrRunningState(n ControllerState, res appsv1.DaemonSet) {
     isHwMgrPodReady("app", getdsLabel(name), n, "Running")
 }
 
+func (c *ControllerState) getKmmPodOnNode(node *corev1.Node, podNamePrefix string) (corev1.Pod, error) {
+    returnPod := corev1.Pod{}
+    nodeName := node.GetName()
+
+    opts := []client.ListOption{ client.MatchingFields{"spec.nodeName": nodeName},
+    }
+
+    list := &corev1.PodList{}
+
+    err := c.rec.List(context.TODO(), list, opts...)
+    if err != nil {
+        if kerrors.IsNotFound(err) {
+            log.Log.Info(fmt.Sprintf("Pod %s has already been deleted on node %v", podNamePrefix, nodeName))
+        }
+        log.Log.Info(fmt.Sprintf("Unable to retrieve pod on node %s, ERR: %v", nodeName, err))
+        return returnPod, err
+    }
+    if len(list.Items) == 0 {
+        return returnPod, errors.New(fmt.Sprintf("Pods not available on node %s", nodeName))
+    }
+    for _, pod := range list.Items {
+        podName := pod.GetName()
+        if strings.Contains(podName, podNamePrefix) {
+            returnPod = pod
+            return returnPod, nil
+        }
+    }
+    return returnPod, errors.New(fmt.Sprintf("Pod with prefix %s is not available on node %s", podNamePrefix, nodeName))
+}
+
+func (c *ControllerState) waitForKmmPodTermination(node *corev1.Node) {
+
+    for {
+        pod, err := c.getKmmPodOnNode(node, "csm-x100-kmm")
+        if err != nil {
+            break
+        }
+        if pod.DeletionTimestamp == nil {
+            log.Log.Info(fmt.Sprintf("csm-x100-kmm pod Deletion time is null on node %s ?", node.GetName()))
+        }
+        log.Log.Info(fmt.Sprintf("Still terminating %v pods on %v", pod.GetName(), node.GetName()))
+        time.Sleep(3 * time.Second)
+    }
+    log.Log.Info(fmt.Sprintf("Successfully drained all Kmm pods from %v, Returning", node.GetName()))
+    return
+}
+
+func (c *ControllerState) waitForFwPodTermination(node *corev1.Node) {
+
+    for {
+        pod, err := c.getNamedPodOnNode(node, PodNamePrefixes["firmware"])
+        if err != nil {
+            break
+        }
+        if pod.DeletionTimestamp == nil {
+           log.Log.Info(fmt.Sprintf("Firmware pod Deletion time is null on node %s ?", node.GetName()))
+        }
+        log.Log.Info(fmt.Sprintf("Still terminating %v pods on %v", pod.GetName(), node.GetName()))
+        time.Sleep(3 * time.Second)
+    }
+    log.Log.Info(fmt.Sprintf("Successfully drained all Fw pods from %v, Returning", node.GetName()))
+    return
+}
+
+func (c *ControllerState) waitForHwPodTermination(node *corev1.Node) {
+    for {
+        pod, err := c.getNamedPodOnNode(node, PodNamePrefixes["HwManager"])
+        if err != nil {
+            break
+        }
+        if pod.DeletionTimestamp == nil {
+           log.Log.Info(fmt.Sprintf("HwManager pod Deletion time is null on node %s ?", node.GetName()))
+        }
+        log.Log.Info(fmt.Sprintf("Still terminating %v pods on %v", pod.GetName(), node.GetName()))
+        time.Sleep(3 * time.Second)
+    }
+    log.Log.Info(fmt.Sprintf("Successfully drained HwMgr pods from %v, Returning", node.GetName()))
+    return
+}
+
 func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) xcardv1.State {
     opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
     log.Log.Info("DEBUG: Pod", "LabelSelector", fmt.Sprintf("%s=%s", labelkey, labelvalue))
@@ -212,7 +391,7 @@ func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase 
     if err != nil {
         log.Log.Info("Could not get PodList", err)
     }
-    log.Log.Info("DEBUG: Pod", "NumberOfPods", len(podlist.Items))
+    //log.Log.Info("DEBUG: Pod", "NumberOfPods", len(podlist.Items))
     //get number of nodes with currentCR as activeCR
     currentCR := n.x100Policy.ObjectMeta.Name
     opts = []client.ListOption{}
@@ -221,11 +400,11 @@ func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase 
     countofnodescurrentCR := 0
     for _, node := range node_list.Items {
         labels := node.GetLabels()
-	if _, ok := labels[x100activecrdKey]; ok {
+        if _, ok := labels[x100activecrdKey]; ok {
             if labels[x100activecrdKey] == currentCR {
                 countofnodescurrentCR++
             }
-	}
+        }
     }
 
     if len(podlist.Items) != countofnodescurrentCR {
@@ -243,27 +422,25 @@ func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase 
     }
     return xcardv1.Operational
 }
+
 func isPodReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) xcardv1.State {
     opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
 
-    log.Log.Info("DEBUG: Pod", "LabelSelector", fmt.Sprintf("%s=%s", labelkey, labelvalue))
     list := &corev1.PodList{}
     err := n.rec.List(context.TODO(), list, opts...)
     if err != nil {
         log.Log.Info("Could not get PodList", err)
     }
-    log.Log.Info("DEBUG: Pod", "NumberOfPods", len(list.Items))
     if len(list.Items) == 0 {
         return xcardv1.NotOperational
     }
 
-    pd := list.Items[0]
-
-    if pd.Status.Phase != phase {
-        log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "!=", phase)
-        return xcardv1.NotOperational
+    for _, pd := range list.Items {
+        if pd.Status.Phase != phase {
+            log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "!=", phase)
+            return xcardv1.NotOperational
+        }
     }
-    log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "==", phase)
     return xcardv1.Operational
 }
 
@@ -313,4 +490,151 @@ func isDaemonSetReady(name string, n ControllerState) xcardv1.State {
     }
 
     return isPodReady("app", name, n, "Running")
+}
+
+func (c *ControllerState) runCommandOnPod(podName string, containerName string, command string) ([]byte, error) {
+    /***
+        Execute supplied command on given pod/contianer
+        Return the output of the command to caller
+    ***/
+    req := c.rec.RESTClient.
+                 Post().
+                 Namespace(assetsNamespace).
+                 Resource("pods").
+                 Name(podName).
+                 SubResource("exec").
+                 VersionedParams(&corev1.PodExecOptions{
+                    Container: containerName,
+                    Command:   []string{"/bin/bash", "-c", command},
+                    Stdin:     true,
+                    Stdout:    true,
+                    Stderr:    true,
+                 },
+                 runtime.NewParameterCodec(c.rec.Scheme))
+    exec, err := remotecommand.NewSPDYExecutor(c.rec.RESTConfig, "POST", req.URL())
+    if err != nil {
+        return nil, fmt.Errorf("error while creating remote command executor: %v", err)
+    }
+
+    var stdout, stderr bytes.Buffer
+    err = exec.Stream(remotecommand.StreamOptions{
+               Stdin:  os.Stdin,
+               Stdout: &stdout,
+               Stderr: &stderr,
+               Tty:    false,
+          })
+    if err != nil {
+        return []byte{}, err
+    }
+    //log.Log.Info(fmt.Sprintf("Command (%s) result on pod %s: %s", command, podName, string(stdout.Bytes())))
+    return stdout.Bytes(), nil
+}
+
+func (c *ControllerState) getNamedPodOnNode(node *corev1.Node, podNamePrefix string) (corev1.Pod, error) {
+
+    returnPod := corev1.Pod{}
+    nodeName := node.GetName()
+
+    opts := []client.ListOption{ client.MatchingFields{"spec.nodeName": nodeName},
+    }
+
+    list := &corev1.PodList{}
+
+    err := c.rec.List(context.TODO(), list, opts...)
+    if err != nil {
+        if kerrors.IsNotFound(err) {
+            log.Log.Info(fmt.Sprintf("Pod %s has already been deleted on node %v", podNamePrefix, nodeName))
+        }
+        log.Log.Info(fmt.Sprintf("Unable to retrieve pod on node %s, ERR: %v", nodeName, err))
+        return returnPod, err
+    }
+    if len(list.Items) == 0 {
+        return returnPod, errors.New(fmt.Sprintf("Pods not available on node %s", nodeName))
+    }
+    for _, pod := range list.Items {
+        podName := pod.GetName()
+        if strings.Contains(podName, podNamePrefix) {
+            returnPod = pod
+            return returnPod, nil
+        }
+    }
+    return returnPod, errors.New(fmt.Sprintf("Pod with prefix %s is not available on node %s", podNamePrefix, nodeName))
+}
+
+func (c *ControllerState) getX100CardCountOnNode(node *corev1.Node) (int, error) {
+    count := 0
+    pod := corev1.Pod{}
+    pod, err := c.getNamedPodOnNode(node, PodNamePrefixes["HwManager"])
+    if err != nil {
+        log.Log.Info(fmt.Sprintf("HwManager pod on node %s not running", node.GetName()))
+        return count, err
+    }
+
+    command := "lspci |grep Qualcomm |rev |cut -d: -f3 |rev | uniq"
+    output, err := c.runCommandOnPod(pod.GetName(), pod.Spec.Containers[0].Name, command)
+    if err != nil {
+        log.Log.Info(fmt.Sprintf("Failed to fetch the x100 cards count on node %s", node.GetName()))
+        return count, err
+    }
+
+    count = len(strings.Split(string(output), "\n"))
+    count--
+    log.Log.Info(fmt.Sprintf("X100 Card count from HwMgr pod on node %s is %v", node.GetName(), count))
+    return count, nil
+}
+
+func (c *ControllerState) readHealthLogFromHwMgrPod(pod *corev1.Pod) ([]byte, error) {
+
+    containerName := pod.Spec.Containers[0].Name
+    podName := pod.GetName()
+    command := fmt.Sprintf("cat %s", healthLogPath)
+    //log.Log.Info(fmt.Sprintf("Reading the health log from %s pod - %s container", podName, containerName))
+    output,err := c.runCommandOnPod(podName, containerName, command)
+    if err != nil {
+       log.Log.Info(fmt.Sprintf("Failed to read healthlog from pod %s, \n ERR:%v", podName,err))
+       return output, err
+    }
+    log.Log.Info(fmt.Sprintf("Fetched health log from pod %s,\nLog:%v", podName, string(output)))
+    return output, nil
+}
+
+func (c *ControllerState) getX100BootupStatusOnNode(node *corev1.Node, x100count int) (int, int, error) {
+    x100fetchedcount := 0
+    x100bootupcount := 0
+    x100failedbootupcount := 0
+    pod := corev1.Pod{}
+    pod, err := c.getNamedPodOnNode(node, PodNamePrefixes["HwManager"])
+    if err != nil {
+        log.Log.Info(fmt.Sprintf(" getX100BootupStatusOnNode: HwManager pod on node %s not running", node.GetName()))
+        return x100bootupcount, x100failedbootupcount, err
+    }
+    output,err := c.readHealthLogFromHwMgrPod(&pod)
+    //Compare the strings with success cases
+    if err != nil {
+        log.Log.Info(fmt.Sprintf("getX100BootupStatusOnNode: Failed to fetch the Health Status on node %s", node.GetName()))
+        return x100bootupcount, x100failedbootupcount, err
+    }
+    res_lines := strings.Split(string(output), "\n")
+    for _, line := range res_lines {
+        re := regexp.MustCompile(`Device boot (success|failed) for (\w+)`)
+        match := re.FindStringSubmatch(line)
+        if len(match) >= 3 {
+            deviceStatus := match[1]
+            deviceChannel := match[2]
+            x100fetchedcount += 1
+            log.Log.Info(fmt.Sprintf("Bootup %s on channel %s", deviceStatus, deviceChannel))
+            if deviceStatus == "failed" {
+                x100failedbootupcount += 1
+            } else if deviceStatus == "success" {
+                x100bootupcount += 1
+            }
+        }
+    }
+
+    if x100fetchedcount != x100count {
+        // Missing health status for some cards
+        log.Log.Info(fmt.Sprintf("Node %s has missing health status for one or more cards", node.GetName()))
+        return x100bootupcount, x100failedbootupcount, errors.New("Node %s has missing health status for one or more cards")
+    }
+    return x100bootupcount, x100failedbootupcount, nil
 }
