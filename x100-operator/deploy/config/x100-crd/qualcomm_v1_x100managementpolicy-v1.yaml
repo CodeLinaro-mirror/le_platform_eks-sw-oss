@@ -5,7 +5,7 @@ metadata:
 spec:
   swVersion: v1
   enableRollback: false
-  nodeSelectors:
+  nodeSelector:
   - <Node-Name> #ToBeReplaced
   x100Resources:
     firmware:

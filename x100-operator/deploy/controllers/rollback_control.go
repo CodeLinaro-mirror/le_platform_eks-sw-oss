@@ -37,7 +37,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy) 
     //wait for pods to go down on the node
     //get the CR object(prior one) and add the current node to NS[](Check if the fault CR gets over-written to Dummy-node)
     //set the swversion to prior-cr's swversion
-    //based on the swversion && len(NodeSelectors[]) -> set x100swvNondefaultKey/x100swvdefaultKey
+    //based on the swversion && len(NodeSelector[]) -> set x100swvNondefaultKey/x100swvdefaultKey
     //?get the current CR Object in the end and remove the node(last-step).
     log.Log.Info("rollbackHandler() - Entered()")
     if policy.Spec.EnableRollback != true {
@@ -98,7 +98,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy) 
                 }
                 if priorCrInstanceAvailable {
                     if priorCrInstance.Spec.SwVersion != "default" {
-                        priorCrInstance.Spec.NodeSelectors = append(priorCrInstance.Spec.NodeSelectors, rnode.ObjectMeta.Name)
+                        priorCrInstance.Spec.NodeSelector = append(priorCrInstance.Spec.NodeSelector, rnode.ObjectMeta.Name)
                         c.rec.Update(context.TODO(), priorCrInstance)
                     }
                     nopts := []client.ListOption{ client.MatchingFields{"metadata.name": rnode.ObjectMeta.Name }}
@@ -146,8 +146,8 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy) 
                     if err != nil {
                         log.Log.Info("rollbackHandler() Unable to label node %s, err %s", tempnode.ObjectMeta.Name, err.Error())
                     }
-                    //delete the Node from policyObject.Spec.NodeSelectors[]
-                    pnodes := currentCrInstance.Spec.NodeSelectors
+                    //delete the Node from policyObject.Spec.NodeSelector[]
+                    pnodes := currentCrInstance.Spec.NodeSelector
                     var ind int
                     for i, pnode := range pnodes {
                         if pnode == rnode.ObjectMeta.Name {
@@ -155,10 +155,9 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy) 
                             break
                         }
                     }
-                    //currentCrInstance.Spec.NodeSelectors[ind] = "Dummy-node"
-                    //Deletion of node from NodeSelectors list should be done only on Non Default
+                    //Deletion of node from NodeSelector list should be done only on Non Default
                     log.Log.Info("rollbackHandler() Deleting node from priorCrInstance.Spec.NS[] at index:",ind, rnode.ObjectMeta.Name)
-                    currentCrInstance.Spec.NodeSelectors = append(currentCrInstance.Spec.NodeSelectors[:ind], currentCrInstance.Spec.NodeSelectors[ind+1:]...)
+                    currentCrInstance.Spec.NodeSelector = append(currentCrInstance.Spec.NodeSelector[:ind], currentCrInstance.Spec.NodeSelector[ind+1:]...)
                     c.rec.Update(context.TODO(), currentCrInstance)
                 } else {
                     log.Log.Info("rollbackHandler() priorCrInstanceAvailable False, Skipping rollback")
