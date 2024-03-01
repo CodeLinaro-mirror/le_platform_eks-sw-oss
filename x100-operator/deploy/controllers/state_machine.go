@@ -44,6 +44,11 @@ func (c *ControllerState) start(reconciler *X100ManagementPolicyReconciler, poli
     if err != nil {
         return err
     }
+    //Remove the invalid nodes from NodeSelector CR list from a non-default.(expectation is any new node added to the cluster should run only default, and avoid the ambiguity of v1/v2)
+    err = c.removeInvalidNodesfromCR(policy)
+    if err != nil {
+        return err
+    }
     err = c.labelX100NodeswithCRDFields(policy, policySpec)
     if err != nil {
         return err

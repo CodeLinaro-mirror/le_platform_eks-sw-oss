@@ -16,6 +16,7 @@ import (
     corev1 "k8s.io/api/core/v1"
     "context"
     "strings"
+    "slices"
     "regexp"
     "errors"
     "bytes"
@@ -637,4 +638,48 @@ func (c *ControllerState) getX100BootupStatusOnNode(node *corev1.Node, x100count
         return x100bootupcount, x100failedbootupcount, errors.New("Node %s has missing health status for one or more cards")
     }
     return x100bootupcount, x100failedbootupcount, nil
+}
+
+func (c *ControllerState) removeInvalidNodesfromCR(policy *xcardv1.X100ManagementPolicy) error {
+    log.Log.Info("---removeInvalidNodesfromCR---")
+    opts := []client.ListOption{}
+    nlist := &corev1.NodeList{}
+    err := c.rec.List(context.TODO(), nlist, opts...)
+    if err != nil {
+        return fmt.Errorf("Unable to list nodes, err %s", err.Error())
+    }
+    nlist_names := []string{}
+    for _, node := range nlist.Items {
+        nlist_names = append(nlist_names, node.ObjectMeta.Name)
+    }
+    cropts := []client.ListOption{}
+    crlist := &xcardv1.X100ManagementPolicyList{}
+    nodeListfromcr := policy.Spec.NodeSelector
+    if len(nodeListfromcr) == 0 && policy.Spec.SwVersion == "default" {
+        return nil
+    } else {
+        for _, ns := range nodeListfromcr {
+            if slices.Contains(nlist_names, ns) {
+                continue
+            }
+            err  := c.rec.List(context.TODO(), crlist, cropts...)
+            if err != nil {
+               log.Log.Error(err, "removeInvalidNodesfromCR()- Unable to list X100ManagementPolicy CRs")
+            }
+            for _, policyItr := range crlist.Items {
+                if policyItr.ObjectMeta.GetName() == policy.ObjectMeta.GetName() {
+                    var ind int
+                    for i, pnode := range policyItr.Spec.NodeSelector {
+                        if pnode == ns {
+                            ind = i
+                            break
+                        }
+                    }
+                    policyItr.Spec.NodeSelector = append(policyItr.Spec.NodeSelector[:ind], policyItr.Spec.NodeSelector[ind+1:]...)
+                    c.rec.Update(context.TODO(), &policyItr)
+                }
+            }
+        }
+        return nil
+    }
 }
