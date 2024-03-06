@@ -1,13 +1,22 @@
 apiVersion: kmm.sigs.x-k8s.io/v1beta1
 kind: Module
 metadata:
-  name: csm-x100-kmm
+  name: csmx100
   namespace: x100-operator-resources
 spec:
   moduleLoader:
     container:
       modprobe:
         moduleName: csm_dp
+        modulesLoadingOrder:
+          - csm_dp
+          - mhi_ptp
+          - mhi_pci
+          - wwan_mhi
+          - wwan
+          - mhi_net
+          - mhi_uci
+          - mhi
       kernelMappings:
         - regexp: '^.+$'
           containerImage: #ToBeReplacedbyController

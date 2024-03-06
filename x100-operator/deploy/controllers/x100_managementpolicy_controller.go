@@ -33,6 +33,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+    kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
     "sigs.k8s.io/controller-runtime/pkg/event"
     "sigs.k8s.io/controller-runtime/pkg/handler"
     "sigs.k8s.io/controller-runtime/pkg/log"
@@ -306,6 +307,12 @@ func (r *X100ManagementPolicyReconciler) SetupWithManager(mgr ctrl.Manager) erro
     if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &corev1.Node{}, "metadata.name", func(rawObj client.Object) []string {
               node := rawObj.(*corev1.Node)
               return []string{node.ObjectMeta.Name}
+              }); err != nil {
+              return err
+              }
+    if err := mgr.GetFieldIndexer().IndexField(context.TODO(), &kmmv1.Module{}, "metadata.name", func(rawObj client.Object) []string {
+              module := rawObj.(*kmmv1.Module)
+              return []string{module.ObjectMeta.Name}
               }); err != nil {
               return err
               }

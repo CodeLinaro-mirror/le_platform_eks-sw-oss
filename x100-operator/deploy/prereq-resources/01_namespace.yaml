@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: x100-operator-resources
+  labels:
+    app.kubernetes.io/component: "x100-operator"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+    pod-security.kubernetes.io/enforce: privileged
+  name: x100-operator-system

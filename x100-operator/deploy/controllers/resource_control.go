@@ -369,12 +369,12 @@ func createModule(n ControllerState, res kmmv1.Module) (xcardv1.State, error) {
     if err := n.rec.Create(context.TODO(), robj); err != nil {
         if errors.IsAlreadyExists(err) {
             logger.Info("Resource exists from an earlier iteration, Updates if any changes are present")
-            return isModuleReady("kmm.node.kubernetes.io/module.name", ModuleIdentifierLabelValue, n, "Running"), nil
+            return isModuleReady(robj.ObjectMeta.Name, n), nil
         }
         logger.Info("Couldn't create", "Error", err)
         return xcardv1.NotOperational, err
     }
-    return isModuleReady("kmm.node.kubernetes.io/module.name", ModuleIdentifierLabelValue, n, "Running"), nil
+    return isModuleReady(robj.ObjectMeta.Name, n), nil
 }
 
 func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, error) {
@@ -515,7 +515,7 @@ func createKindResource(n ControllerState, kind string, res runtime.Object) (xca
 func preProcessModule(obj *kmmv1.Module, n ControllerState) {
     // Add all daemonsets here to define a mapping
     transformations := map[string]func(*kmmv1.Module, *xcardv1.X100ManagementPolicySpec, ControllerState) error{
-        "csm-x100-kmm": TransformModule,
+        "csmx100": TransformModule,
     }
 
     t, ok := transformations[obj.Name]

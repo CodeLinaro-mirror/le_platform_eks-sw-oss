@@ -6,6 +6,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 package controllers
 
 import (
+    kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
     kerrors "k8s.io/apimachinery/pkg/api/errors"
     "sigs.k8s.io/controller-runtime/pkg/log"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -334,20 +335,34 @@ func (c *ControllerState) getKmmPodOnNode(node *corev1.Node, podNamePrefix strin
     return returnPod, errors.New(fmt.Sprintf("Pod with prefix %s is not available on node %s", podNamePrefix, nodeName))
 }
 
+func hasKmmReadylabel(labels map[string]string) bool {
+    for k, _ := range labels {
+        if strings.Contains(k, "kmm.node.kubernetes.io/x100-operator-resources.") {
+            return true
+        }
+    }
+    return false
+}
+
 func (c *ControllerState) waitForKmmPodTermination(node *corev1.Node) {
 
     for {
-        pod, err := c.getKmmPodOnNode(node, "csm-x100-kmm")
+        nopts := []client.ListOption{ client.MatchingFields{"metadata.name": node.ObjectMeta.Name }}
+        tempnodes := &corev1.NodeList{}
+        err := c.rec.List(context.TODO(), tempnodes, nopts...)
         if err != nil {
+            log.Log.Info("Could not get Latest Node", err,"--")
+        }
+        tempnode := tempnodes.Items[0]
+        labels := tempnode.GetLabels()
+        isKmmReady := hasKmmReadylabel(labels)
+        if !isKmmReady {
             break
         }
-        if pod.DeletionTimestamp == nil {
-            log.Log.Info(fmt.Sprintf("csm-x100-kmm pod Deletion time is null on node %s ?", node.GetName()))
-        }
-        log.Log.Info(fmt.Sprintf("Still terminating %v pods on %v", pod.GetName(), node.GetName()))
+        log.Log.Info(fmt.Sprintf("Still running KMM rmmod worker pods on %v", node.GetName()))
         time.Sleep(3 * time.Second)
     }
-    log.Log.Info(fmt.Sprintf("Successfully drained all Kmm pods from %v, Returning", node.GetName()))
+    log.Log.Info(fmt.Sprintf("Successfully drained all Modules from %v, Returning", node.GetName()))
     return
 }
 
@@ -384,21 +399,37 @@ func (c *ControllerState) waitForHwPodTermination(node *corev1.Node) {
     return
 }
 
-func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) xcardv1.State {
-    opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
-    log.Log.Info("DEBUG: Pod", "LabelSelector", fmt.Sprintf("%s=%s", labelkey, labelvalue))
-    podlist := &corev1.PodList{}
-    err := n.rec.List(context.TODO(), podlist, opts...)
+func isModuleReady(moduleName string, n ControllerState) xcardv1.State {
+    log.Log.Info("Module Object query","Name: ",moduleName)
+    opts := []client.ListOption{client.MatchingFields{"metadata.name": moduleName}}
+    moduleList := &kmmv1.ModuleList{}
+    err := n.rec.List(context.TODO(), moduleList, opts...)
     if err != nil {
-        log.Log.Info("Could not get PodList", err)
+        log.Log.Info("Could not get ModuleList", err)
+        return xcardv1.NotOperational
     }
-    //log.Log.Info("DEBUG: Pod", "NumberOfPods", len(podlist.Items))
+    log.Log.Info("ModuleList", "length", len(moduleList.Items))
+    if len(moduleList.Items) == 0 {
+        return xcardv1.NotOperational
+    }
     //get number of nodes with currentCR as activeCR
+    module := kmmv1.Module{}
+    if len(moduleList.Items) > 0 {
+       for _, md := range moduleList.Items {
+            if md.ObjectMeta.Name == moduleName {
+                module = md
+                log.Log.Info("ModuleList Fetched the current Module")
+                break
+            }
+        }
+    }
+    log.Log.Info("Module Object Values","[module.Status.ModuleLoader.AvailableNumber]: ", module.Status.ModuleLoader.AvailableNumber)
+    log.Log.Info("Module Object Values", "[module.Status.ModuleLoader.DesiredNumber]: ", module.Status.ModuleLoader.DesiredNumber)
     currentCR := n.x100Policy.ObjectMeta.Name
     opts = []client.ListOption{}
     node_list := &corev1.NodeList{}
     err = n.rec.List(context.TODO(), node_list, opts...)
-    countofnodescurrentCR := 0
+    var countofnodescurrentCR int32 = 0
     for _, node := range node_list.Items {
         labels := node.GetLabels()
         if _, ok := labels[x100activecrdKey]; ok {
@@ -407,19 +438,11 @@ func isModuleReady(labelkey string, labelvalue string, n ControllerState, phase 
             }
         }
     }
-
-    if len(podlist.Items) != countofnodescurrentCR {
+    if module.Status.ModuleLoader.AvailableNumber != countofnodescurrentCR {
        return xcardv1.NotOperational
     }
-    if len(podlist.Items) == 0 && countofnodescurrentCR == 0 {
+    if module.Status.ModuleLoader.AvailableNumber == 0 && countofnodescurrentCR == 0 {
         return xcardv1.Operational
-    }
-    if len(podlist.Items) == countofnodescurrentCR {
-        for _, pd := range podlist.Items {
-            if pd.Status.Phase != phase {
-                return xcardv1.NotOperational
-            }
-        }
     }
     return xcardv1.Operational
 }

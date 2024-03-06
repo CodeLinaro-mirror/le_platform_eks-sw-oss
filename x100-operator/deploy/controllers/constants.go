@@ -12,7 +12,7 @@ import (
 var NamePrefixes = map[string]string{
     "firmware":     "csm-x100fw-daemonset",
     "HwManager":    "csm-x100hwmgr-daemonset",
-    "kmodules":     "csm-x100-kmm",
+    "kmodules":     "csmx100",
     "kmmConfigMap": "csm-x100kmodules-configmap",
     "devicePlugin": "csm-x100-dpds",
 }
@@ -20,7 +20,7 @@ var NamePrefixes = map[string]string{
 var PodNamePrefixes = map[string]string{
     "firmware":     "csm-x100fw",
     "HwManager":    "csm-x100hwmgr",
-    "kmodules":     "csm-x100-kmm",
+    "kmodules":     "csmx100",
     "kmmConfigMap": "csm-x100kmodules-configmap",
     "devicePlugin": "csmx100-dp",
 }
@@ -28,7 +28,7 @@ var PodNamePrefixes = map[string]string{
 const (
     FirmwareDsName     = "csm-x100-firmware-ds"
     HwManagerDsName    = "csm-x100-hwmanager-ds"
-    KModulesName       = "csm-x100-kmm"
+    KModulesName       = "csmx100"
     KModuleCMName      = "csm-x100-kmmdockerfile"
     DevicePluginDsName = "csm-x100-deviceplugin-ds"
 )
