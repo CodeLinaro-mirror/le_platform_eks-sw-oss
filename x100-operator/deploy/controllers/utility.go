@@ -512,9 +512,6 @@ func isDaemonSetReady(name string, n ControllerState) xcardv1.State {
     if ds.Status.NumberUnavailable != 0 {
         return xcardv1.NotOperational
     }
-    if ds.Status.DesiredNumberScheduled == 0 && ds.Status.NumberAvailable == 0 {
-        return xcardv1.Operational
-    }
 
     return isPodReady("app", name, n, "Running")
 }
