@@ -8,6 +8,5 @@ RUN apt-get update \
 
 COPY --chown=bin csm-x100-fconfig.sh /usr/bin
 COPY --chmod=777 config /etc/config
-COPY --chmod=777 vf-count.conf /etc/.
 
 CMD ["/usr/bin/csm-x100-fconfig.sh"]

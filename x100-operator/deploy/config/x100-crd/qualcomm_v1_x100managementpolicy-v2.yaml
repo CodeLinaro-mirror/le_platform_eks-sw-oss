@@ -7,6 +7,7 @@ spec:
   enableRollback: false
   nodeSelector:
   - <Node-Name> #ToBeReplaced
+  vfCount: 4
   x100Resources:
     firmware:
       repository: #<CIR registry URL>

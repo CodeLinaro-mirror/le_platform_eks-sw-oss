@@ -43,6 +43,8 @@ spec:
         env:
         - name: "SWVERSION_FROMCRD"
           value: "default"
+        - name: "VFCOUNT"
+          value: "4"
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged

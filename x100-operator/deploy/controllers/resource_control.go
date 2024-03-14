@@ -20,6 +20,7 @@ package controllers
 
 import (
     "context"
+    "strconv"
     goerrors "errors"
     "fmt"
     "os"
@@ -626,17 +627,18 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
     env_val := fmt.Sprintf("%s:{Firmware:%s HwManager:%s Exporter:%s KModules:%s DevicePlugin:%s}", sv, fv, hv, ev, kv, dv)
     obj.Spec.Template.Spec.Containers[0].Env[0].Value = env_val
 
+    if config.VfCount > 0 {
+        obj.Spec.Template.Spec.Containers[0].Env[1].Name = "VFCOUNT"
+        obj.Spec.Template.Spec.Containers[0].Env[1].Value = strconv.Itoa(config.VfCount)
+    }
+
     obj.Spec.Template.Spec.NodeSelector[x100swversionKey] = config.SwVersion
     if len(config.NodeSelector) == 0 && config.SwVersion == "default" {
-       obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
+        obj.Spec.Template.Spec.NodeSelector[x100swvdefaultKey] = x100swvdefaultValue
     }
 
     log.Log.Info("TranformHwMgr: ",  "HwMgr :", obj.Spec.Template.Spec.Containers[0].Image)
-    //log.Log.Info("TranformHwMgr: ", "Image1 :", obj.Spec.Template.Spec.Containers[1].Image)
-    //log.Log.Info("TranformHwMgr: ", "Image2 :", obj.Spec.Template.Spec.Containers[2].Image)
     log.Log.Info("TranformHwMgr: ", "Exporter :", obj.Spec.Template.Spec.Containers[3].Image)
-    //log.Log.Info("TranformHwMgr: ", "Image pull policy :", obj.Spec.Template.Spec.Containers[0].ImagePullPolicy)
-    //log.Log.Info("TranformHwMgr: ", "Image pull secret :", obj.Spec.Template.Spec.ImagePullSecrets)
 
     return nil
 }
