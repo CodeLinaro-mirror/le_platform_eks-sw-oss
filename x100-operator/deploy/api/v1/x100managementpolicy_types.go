@@ -92,8 +92,8 @@ type KModuleSpec struct {
     DtkAutoImage string `json:"dtkAutoImage"`
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\-]+
     DtkSrcImage string `json:"dtkSrcImage"`
-    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]+
-    ImageRepoSecret string `json:"imageRepoSecret"`
+    // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.-]*
+    ImageRepoSecret string `json:"imageRepoSecret,omitempty"`
 }
 
 type State string
