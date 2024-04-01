@@ -10,13 +10,7 @@ spec:
         moduleName: csm_dp
         modulesLoadingOrder:
           - csm_dp
-          - mhi_ptp
-          - mhi_pci
-          - wwan_mhi
-          - wwan
-          - mhi_net
-          - mhi_uci
-          - mhi
+          - mhi mhi_uci mhi_net wwan wwan_mhi mhi_pci mhi_ptp
       kernelMappings:
         - regexp: '^.+$'
           containerImage: #ToBeReplacedbyController
