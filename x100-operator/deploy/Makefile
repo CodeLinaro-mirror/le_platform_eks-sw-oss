@@ -141,7 +141,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	podman build -t ${IMG} .
-	kustomize build ./config/default/ > x100-operator-deploy.yaml
+	$(KUSTOMIZE) build ./config/default/ > x100-operator-deploy.yaml
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
