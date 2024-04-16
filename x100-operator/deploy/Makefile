@@ -141,7 +141,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
 	podman build -t ${IMG} .
-	$(KUSTOMIZE) build ./config/default/ > x100-operator-deploy.yaml
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -208,6 +207,7 @@ $(ENVTEST): $(LOCALBIN)
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image x100-operator=$(IMG)
+	$(KUSTOMIZE) build config/default/ > x100-operator-deploy.yaml
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 
