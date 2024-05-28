@@ -25,7 +25,7 @@ spec:
         - x100-operator
         args:
         - --leader-elect
-        image: #<Replace x100-operator controller image here>
+        image: x100-operator
         imagePullPolicy: Always
         name: x100-operator
         securityContext:
