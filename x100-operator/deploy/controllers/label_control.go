@@ -34,40 +34,49 @@ import (
 
 func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 
-    // fetch all nodes in the cluster
-    log.Log.Info("Entering labelX100Nodes() ")
-    opts := []client.ListOption{}
-    list := &corev1.NodeList{}
-    err := n.rec.List(context.TODO(), list, opts...)
-    if err != nil {
-        return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
-    }
+	// fetch all nodes in the cluster
+	log.Log.Info("Entering labelX100Nodes() ")
+	opts := []client.ListOption{}
+	list := &corev1.NodeList{}
+	err := n.rec.List(context.TODO(), list, opts...)
+	if err != nil {
+		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+	}
 
-    for _, node := range list.Items {
-        // get node labels
-        labels := node.GetLabels()
-        hasCustomLabel := hasCustomX100Label(labels)
-        hasPCILabel := hasX100PCILabels(labels)
-        if !hasCustomLabel && hasPCILabel {
-            // label node with the custom label
-            labels[x100LabelKey] = x100LabelValue
-            node.SetLabels(labels)
-            err = n.rec.Update(context.TODO(), &node)
-            if err != nil {
-                return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
-            }
-        } else if hasCustomLabel && !hasPCILabel {
-            // previously labelled node and no longer has X100s'
-            // reset the custom label as it is not valid
-            labels[x100LabelKey] = "false"
-            node.SetLabels(labels)
-            err = n.rec.Update(context.TODO(), &node)
-            if err != nil {
-                return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
-            }
-        }
-    }
-    return nil
+	for _, node := range list.Items {
+		// get node labels
+		labels := node.GetLabels()
+		hasCustomLabel := hasCustomX100Label(labels)
+		hasPCILabel := hasX100PCILabels(labels)
+		hasIsolateLabel := hasX100IsolateLabel(labels)
+		log.Log.Info("Entered labelX100()")
+		if !hasCustomLabel && hasPCILabel {
+			// Check for Isolate Label before applying Custom Label
+			if hasIsolateLabel {
+				labels[x100LabelKey] = "false"
+			} else {
+				labels[x100LabelKey] = x100LabelValue
+			}
+			node.SetLabels(labels)
+			err = n.rec.Update(context.TODO(), &node)
+			if err != nil {
+				return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+			}
+		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
+			// check the isolate label before removing the Custom Label
+			// previously labelled node and no longer has X100s'
+			// reset the custom label as it is not valid
+			log.Log.Info("isolate exit")
+			labels[x100LabelKey] = "false"
+			node.SetLabels(labels)
+			err = n.rec.Update(context.TODO(), &node)
+			if err != nil {
+				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+			}
+		}
+
+	}
+	return nil
 }
 
 func (c *ControllerState) labelX100NodeswithCRDFields(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {

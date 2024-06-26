@@ -41,6 +41,7 @@ const (
 const (
     x100LabelKey            = "qualcomm.com/x100.present"
     x100LabelValue          = "true"
+    x100IsolateKey         = "qualcomm.com/x100.isolate"
     x100activecrdKey        = "qualcomm.com/x100.active-cr"
     x100PriorCr             = "qualcomm.com/x100.prior-cr"
     x100swversionKey        = "qualcomm.com/x100.swversion"

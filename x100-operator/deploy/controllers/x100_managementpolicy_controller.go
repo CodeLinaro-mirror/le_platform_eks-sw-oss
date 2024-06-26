@@ -253,40 +253,40 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 
     p := predicate.Funcs{
         CreateFunc: func(e event.CreateEvent) bool {
-            labels := e.Object.GetLabels()
-            hasPCILabel := hasX100PCILabels(labels)
-            hasCustomLabel := hasCustomX100Label(labels)
+        	labels := e.Object.GetLabels()
+        	hasPCILabel := hasX100PCILabels(labels)
+        	hasCustomLabel := hasCustomX100Label(labels)
 
-            x100LabelMissing := hasPCILabel && !hasCustomLabel
+        	x100LabelMissing := hasPCILabel && !hasCustomLabel
 
-            log.Log.Info("Labels->", "hasX100PCILabels:", hasPCILabel, "hasCustomX100Label:", hasCustomLabel, "x100LabelMissing:", x100LabelMissing)
-            if x100LabelMissing {
-                log.Log.Info("[Create Event] New node needs an update, x100 custom label is missing","name", e.Object.GetName())
-            }
-            return x100LabelMissing
+        	log.Log.Info("Labels->", "hasX100PCILabels:", hasPCILabel, "hasCustomX100Label:", hasCustomLabel, "x100LabelMissing:", x100LabelMissing)
+        	if x100LabelMissing {
+        	log.Log.Info("[Create Event] New node needs an update, x100 custom label is missing","name", e.Object.GetName())
+        	}
+        	return x100LabelMissing
         },
-        UpdateFunc: func(e event.UpdateEvent) bool {
-            newLabels := e.ObjectNew.GetLabels()
-            log.Log.Info("Node Labels Updated - Enque reconcile requests on available CRs")
-            //log.Log.Info("Node Labels ->", "newLabels: ", newLabels)
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		newLabels := e.ObjectNew.GetLabels()
+		log.Log.Info("Node Labels Updated - Enque reconcile requests on available CRs")
+		//log.Log.Info("Node Labels ->", "newLabels: ", newLabels)
 
-            hasPCILabel := hasX100PCILabels(newLabels)
-            hasCustomLabel := hasCustomX100Label(newLabels)
+		hasPCILabel := hasX100PCILabels(newLabels)
+		hasCustomLabel := hasCustomX100Label(newLabels)
+		hasIsolateLabel := hasX100IsolateLabel(newLabels)
 
-            x100LabelMissing := hasPCILabel && !hasCustomLabel
-            x100LabelOutdated := !hasPCILabel && hasCustomLabel
+		x100LabelMissing := hasPCILabel && !hasCustomLabel
+		x100LabelOutdated := (hasIsolateLabel || !hasPCILabel) && hasCustomLabel
 
-            needsUpdate := x100LabelMissing || x100LabelOutdated
+		needsUpdate := x100LabelMissing || x100LabelOutdated
 
-            if needsUpdate {
-                log.Log.Info("[Update Event] Node needs an update","name", e.ObjectNew.GetName(),
-                    "x100LabelMissing", x100LabelMissing,
-                    "x100LabelOutdated", x100LabelOutdated)
-            }
-            return needsUpdate
-        },
+		if needsUpdate {
+			log.Log.Info("[Update Event] Node needs an update", "name", e.ObjectNew.GetName(),
+				"x100LabelMissing", x100LabelMissing,
+				"x100LabelOutdated", x100LabelOutdated)
+		}
+		return needsUpdate
+	},
     }
-
     err := c.Watch(source.Kind(mgr.GetCache(), &corev1.Node{}), handler.EnqueueRequestsFromMapFunc(mapFn), p)
     return err
 }

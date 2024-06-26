@@ -178,6 +178,14 @@ func hasX100PCILabels(labels map[string]string) bool {
     return false
 }
 
+func hasX100IsolateLabel(labels map[string]string) bool {
+	if _, ok := labels[x100IsolateKey]; ok {
+		log.Log.Info("Isolate label present")
+		return true
+	}
+	return false
+}
+
 func setModuleIdentifier(value string) {
     ModuleIdentifierLabelValue = value
 }
