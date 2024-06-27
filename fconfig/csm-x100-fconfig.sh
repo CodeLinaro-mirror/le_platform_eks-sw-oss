@@ -11,6 +11,24 @@ echo $DYNAMICCONFIG_PODNAME | rev | cut -d- -f2- | rev > /var/tmp/lassenconfig/f
 rsync -a /etc/config/* /var/lib/firmware/qcom/lassen/flatimg/config/.
 rsync -a /etc/config/* /var/tmp/lassenconfig/.
 
+trim_version(){
+    local filename="$1"
+    local ext="${filename##*.}"
+    local name="${filename%_[0-9]*}.$ext"
+    echo "$name"
+}
+
+if [ -n $ApplyConfiguration ] && [ -f /etc/configmap/$ApplyConfiguration ]; then
+    conf_file=/etc/configmap/"$ApplyConfiguration"
+
+    while IFS= read -r file; do
+        if [ -f /etc/configmap/$file ]; then
+            config_name=$(trim_version "$file")
+            cp -p /etc/configmap/$file /var/lib/firmware/qcom/lassen/flatimg/config/"$config_name"
+            cp -p /etc/configmap/$file /var/tmp/lassenconfig/"$config_name"
+        fi
+    done < "$conf_file"
+fi
 
 chmod -R 777 /var/lib/firmware/qcom/lassen/flatimg/config
 bash -c "echo -n 1 > /var/tmp/fconfig-state.conf"
