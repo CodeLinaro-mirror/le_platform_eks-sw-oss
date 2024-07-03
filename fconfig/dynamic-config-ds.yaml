@@ -29,11 +29,15 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.name
+          - name: ApplyConfiguration
+            value: apply_configuration.conf
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged
         - mountPath: /var/tmp
           name: csm-fconfig-status
+        - mountPath: /etc/configmap
+          name: x100-dyn-config
       volumes:
       - name: hostpath-privileged
         hostPath:
@@ -42,6 +46,9 @@ spec:
         hostPath:
           path: /tmp
           type: Directory
+      - name: x100-dyn-config
+        configMap:
+          name: x100-dyn-config
       nodeSelector:
         kubernetes.io/hostname: #<Node-Name>  ##For Single node config Update
         #qualcomm.com/x100.swversion: "default"  ##For all the Nodes running default SW version
