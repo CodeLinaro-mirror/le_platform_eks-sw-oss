@@ -22,10 +22,14 @@ if [ -n $ApplyConfiguration ] && [ -f /etc/configmap/$ApplyConfiguration ]; then
     conf_file=/etc/configmap/"$ApplyConfiguration"
 
     while IFS= read -r file; do
-        if [ -f /etc/configmap/$file ]; then
+        file=$(echo $file | sed 's/\r//g')
+        dir=$(dirname $file)
+        filename=$(basename $file)
+        if [ -f /etc/configmap/$filename ]; then
             config_name=$(trim_version "$file")
-            cp -p /etc/configmap/$file /var/lib/firmware/qcom/lassen/flatimg/config/"$config_name"
-            cp -p /etc/configmap/$file /var/tmp/lassenconfig/"$config_name"
+            cp -p /etc/configmap/$filename /var/lib/firmware/qcom/lassen/flatimg/config/"$config_name"
+            mkdir -p /var/tmp/lassenconfig/"$dir"
+            cp -p /etc/configmap/$filename /var/tmp/lassenconfig/"$config_name"
         fi
     done < "$conf_file"
 fi
