@@ -56,6 +56,8 @@ spec:
           name: sysfscgroup
         - mountPath: /var/tmp
           name: csm-hwmgr-status
+        - mountPath: /diaglogs
+          name: diaglogs
         - name: sys-bus
           mountPath: /sys/bus/pci/devices
         - name: sys-devices
@@ -113,6 +115,10 @@ spec:
         hostPath:
           path: /tmp
           type: Directory
+      - name: diaglogs
+        hostPath:
+          path: /var/log/diagfwdlogs
+          type: DirectoryOrCreate
       - name: varlog
         emptyDir: {}
       - name: sys-bus
