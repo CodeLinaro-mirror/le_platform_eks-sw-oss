@@ -55,7 +55,7 @@ spec:
         - mountPath: /sys/fs/cgroup
           name: sysfscgroup
         - mountPath: /var/tmp
-          name: csm-hwmgr-status
+          name: csm-fconfig
         - mountPath: /diaglogs
           name: diaglogs
         - name: sys-bus
@@ -111,10 +111,6 @@ spec:
         hostPath:
           path: /sys/fs/cgroup
           type: Directory
-      - name: csm-hwmgr-status
-        hostPath:
-          path: /tmp
-          type: Directory
       - name: diaglogs
         hostPath:
           path: /var/log/diagfwdlogs
@@ -128,6 +124,10 @@ spec:
       - name: sys-devices
         hostPath:
           path: /sys/devices
+          type: Directory
+      - name: csm-fconfig
+        hostPath:
+          path: /tmp
           type: Directory
       nodeSelector:
         qualcomm.com/x100.present: "true"

@@ -16,8 +16,6 @@ spec:
     spec:
       serviceAccount: csm-x100-sa
       serviceAccountName: csm-x100-sa
-      securityContext:
-        runAsUser: 0
       imagePullSecrets:
       - name: eks-pull-secret
       containers:
