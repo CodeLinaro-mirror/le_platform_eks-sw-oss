@@ -350,6 +350,7 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 
 			hasPCILabel := hasX100PCILabels(newLabels)
 			hasCustomLabel := hasCustomX100Label(newLabels)
+			hasRolledBackLabel := hasX100RolledBackLabel(newLabels)
 
 			hasUpgradeFailedLabel := hasX100UpgradeFailedLabel(newLabels)
 			hasUpgradingLabel := hasX100UpgradingLabel(newLabels)
@@ -357,7 +358,7 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 			x100LabelMissing := hasPCILabel && !hasCustomLabel
 			x100LabelOutdated := !hasPCILabel && hasCustomLabel
 
-			inUpgradePath := hasUpgradeFailedLabel || hasUpgradingLabel
+			inUpgradePath := hasUpgradeFailedLabel || hasUpgradingLabel || hasRolledBackLabel
 
 			needsUpdate := x100LabelMissing || x100LabelOutdated || inUpgradePath
 

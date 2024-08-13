@@ -260,7 +260,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 								enablePodSelectorLabels and other labels for new pods creation
 						***/
 						log.Log.Info(fmt.Sprintf("Node %s has an activeCR label", node.ObjectMeta.Name))
-						if hasX100UpgradeFailedLabel(labels) {
+						if hasX100UpgradeFailedLabel(labels) || hasX100RollingBackUpgradeLabel(labels) {
 							// handle only during rollback handler
 							cardState, _ := c.rollbackHandler(policy, &node)
 							if cardState == xcardv1.NotOperational {
@@ -326,6 +326,38 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 								hasUpgradingLabel := hasX100UpgradingLabel(labels)
 								if hasUpgradingLabel {
 									err = c.runUpgradeSequenceForNode(&node)
+									if err != nil {
+										return err
+									}
+								}
+								hasRolledBackLabel := hasX100RolledBackLabel(labels)
+								if hasRolledBackLabel {
+									rnode := &corev1.Node{}
+									nodeUpdated := false
+									// Remove stale labels, keep rolledback label to fall back on enable selectors
+									if hasX100BootupSuccessLabel(labels) {
+										for _, label := range x100StatusLabels {
+											if _, ok := labels[label]; ok {
+												delete(labels, label)
+											}
+										}
+										node.SetLabels(labels)
+										err = c.rec.Update(context.TODO(), &node)
+										if err != nil {
+											return fmt.Errorf("Unable to remove label %s from node %s, err %s", x100RolledBack, node.ObjectMeta.Name, err.Error())
+										}
+										err, rnode = c.fetchUpdatedNodeInstance(&node)
+										if err != nil {
+											return err
+										}
+										nodeUpdated = true
+									}
+
+									if !nodeUpdated {
+										rnode = &node
+									}
+									// Enable pod selector labels
+									err = c.enablePodSelectorLabels(rnode)
 									if err != nil {
 										return err
 									}

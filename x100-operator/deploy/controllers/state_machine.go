@@ -19,7 +19,10 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
 	xcardv1 "x100-operator/api/v1"
@@ -129,9 +132,33 @@ func (c *ControllerState) getx100bootupStatus() (xcardv1.State, error) {
 func (c *ControllerState) endState() (xcardv1.State, error) {
 	// Terminate, cleanup
 
+	opts := []client.ListOption{&client.MatchingLabels{x100ActiveCR: c.x100Policy.ObjectMeta.Name}}
 
 	log.Log.Info("DEBUG: endState()", "LabelSelector", fmt.Sprintf("%s=%s",
 		x100ActiveCR, c.x100Policy.ObjectMeta.Name))
+
+	list := &corev1.NodeList{}
+	err := c.rec.List(context.TODO(), list, opts...)
+	if err != nil {
+		return xcardv1.NotOperational, fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+	}
+
+	for _, node := range list.Items {
+		labels := node.GetLabels()
+		nodeHasRolledBackLabel := hasX100RolledBackLabel(labels)
+
+		if nodeHasRolledBackLabel {
+			delete(labels, x100RolledBack)
+		}
+
+		node.SetLabels(labels)
+		err = c.rec.Update(context.TODO(), &node)
+		if err != nil {
+			return xcardv1.NotOperational, fmt.Errorf("Unable to delete label node %s with %s, err %s",
+				node.ObjectMeta.Name, x100RolledBack, err.Error())
+		}
+		log.Log.Info(fmt.Sprintf("Reached endstate for node %s", node.ObjectMeta.Name))
+	}
 
 	return xcardv1.Operational, nil
 }

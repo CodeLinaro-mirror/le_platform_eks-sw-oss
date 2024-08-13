@@ -64,6 +64,8 @@ const (
 	x100BootupStatusMarked     = "qualcomm.com/x100.bootStatusMarked"
 	x100Upgrading              = "qualcomm.com/x100.upgrading"
 	x100UpgradeFailed          = "qualcomm.com/x100.swUpgradeFailed"
+	x100RollingBackUpgrade     = "qualcomm.com/x100.rollingBackUpgrade"
+	x100RolledBack             = "qualcomm.com/x100.rolledBack"
 	x100OwnerPolicyDeleted     = "qualcomm.com/x100.ownerPolicyDeleted"
 	x100TeardownCompleted      = "qualcomm.com/x100.teardownCompleted"
 	x100NodeAggregationBlocked = "qualcomm.com/x100.aggregationBlocked"
@@ -81,6 +83,8 @@ var x100CrdLabels = []string{
 	x100BootupStatusMarked,
 	x100Upgrading,
 	x100UpgradeFailed,
+	x100RollingBackUpgrade,
+	x100RolledBack,
 	x100OwnerPolicyDeleted,
 	x100TeardownCompleted,
 	x100NodeAggregationBlocked,
@@ -99,6 +103,7 @@ var x100StatusLabels = []string{
 
 var x100TransientStateLabels = []string{
 	x100Upgrading,
+	x100RollingBackUpgrade,
 }
 
 const (

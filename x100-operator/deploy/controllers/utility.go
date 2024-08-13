@@ -148,6 +148,24 @@ func hasX100BootupStatusMarkedLabel(labels map[string]string) bool {
 	return false
 }
 
+func hasX100RollingBackUpgradeLabel(labels map[string]string) bool {
+	if _, ok := labels[x100RollingBackUpgrade]; ok {
+		if labels[x100RollingBackUpgrade] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasX100RolledBackLabel(labels map[string]string) bool {
+	if _, ok := labels[x100RolledBack]; ok {
+		if labels[x100RolledBack] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasCustomX100Label(labels map[string]string) bool {
 	if _, ok := labels[x100LabelKey]; ok {
 		if labels[x100LabelKey] == x100LabelValue {
@@ -956,6 +974,26 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 
 }
 
+func (c *ControllerState) transitionToRollingBackUpgradeState(node *corev1.Node) error {
+	labels := node.GetLabels()
+
+	if !hasX100RollingBackUpgradeLabel(labels) {
+		for _, label := range x100StatusLabels {
+			if _, ok := labels[label]; ok {
+				delete(labels, label)
+			}
+		}
+		labels[x100RollingBackUpgrade] = "true"
+
+		node.SetLabels(labels)
+		err := c.rec.Update(context.TODO(), node)
+		if err != nil {
+			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
+				x100RollingBackUpgrade, err.Error())
+		}
+	}
+	return nil
+}
 
 func (c *ControllerState) waitForKmmPodTermination(node *corev1.Node) error {
 
