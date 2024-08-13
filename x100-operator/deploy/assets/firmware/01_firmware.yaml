@@ -35,6 +35,8 @@ spec:
           mountPath: /var/log
         - name: sysfscgroup
           mountPath: /sys/fs/cgroup
+        - name: podcheck
+          mountPath: /var/podcheck
       - image: public.ecr.aws/docker/library/ubuntu:22.04
         name: csm-x100-firmware-logs
         imagePullPolicy: IfNotPresent
@@ -58,5 +60,7 @@ spec:
         - name: x100-firmware
           persistentVolumeClaim:
             claimName: csm-x100-pvc
+        - name: podcheck
+          emptyDir: {}
       nodeSelector:
         qualcomm.com/x100.present: "true"

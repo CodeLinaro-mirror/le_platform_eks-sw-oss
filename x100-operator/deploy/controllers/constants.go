@@ -38,7 +38,17 @@ const (
 	KModuleSelectorLabelKey      = "qualcomm.com/x100.kmodules.present"
 	DevicePluginSelectorLabelKey = "qualcomm.com/x100.deviceplugin.present"
 )
-var x100SelectorLabels = []string{
+
+// Sequence for deletion
+var x100SelectorLabelsForDeletion = []string{
+	DevicePluginSelectorLabelKey,
+	FirmwareDsSelectorLabelKey,
+	HwMgrDsSelectorLabelKey,
+	KModuleSelectorLabelKey,
+}
+
+// Sequence for creation
+var x100SelectorLabelsForCreation = []string{
 	FirmwareDsSelectorLabelKey,
 	HwMgrDsSelectorLabelKey,
 	KModuleSelectorLabelKey,
@@ -50,6 +60,11 @@ const (
 	assetsNamespace = "x100-operator-resources"
 	nfdResourcePath = "/opt/x100-operator/nfd-configuration"
 )
+
+var PodCompletionPath = []string{
+	"/var/podcheck/fw_pod_running",
+	"/var/podcheck/hwmgr_pod_running",
+}
 
 const (
 	x100LabelKey               = "qualcomm.com/x100.present"
@@ -68,6 +83,7 @@ const (
 	x100RolledBack             = "qualcomm.com/x100.rolledBack"
 	x100OwnerPolicyDeleted     = "qualcomm.com/x100.ownerPolicyDeleted"
 	x100TeardownCompleted      = "qualcomm.com/x100.teardownCompleted"
+	x100EnablingFirstPolicy    = "qualcomm.com/x100.enablingFirstPolicy"
 	x100NodeAggregationBlocked = "qualcomm.com/x100.aggregationBlocked"
 )
 
@@ -87,6 +103,7 @@ var x100CrdLabels = []string{
 	x100RolledBack,
 	x100OwnerPolicyDeleted,
 	x100TeardownCompleted,
+	x100EnablingFirstPolicy,
 	x100NodeAggregationBlocked,
 }
 
@@ -104,6 +121,7 @@ var x100StatusLabels = []string{
 var x100TransientStateLabels = []string{
 	x100Upgrading,
 	x100RollingBackUpgrade,
+	x100EnablingFirstPolicy,
 }
 
 const (

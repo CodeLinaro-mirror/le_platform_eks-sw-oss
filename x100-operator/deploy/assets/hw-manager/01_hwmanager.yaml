@@ -62,6 +62,8 @@ spec:
           mountPath: /sys/bus/pci/devices
         - name: sys-devices
           mountPath: /sys/devices
+        - name: podcheck
+          mountPath: /var/podcheck
       - name: csm-x100-hwmanager-logs1
         image: public.ecr.aws/docker/library/ubuntu:22.04
         imagePullPolicy: IfNotPresent
@@ -111,6 +113,8 @@ spec:
         hostPath:
           path: /sys/fs/cgroup
           type: Directory
+      - name: podcheck
+        emptyDir: {}
       - name: diaglogs
         hostPath:
           path: /var/log/diagfwdlogs

@@ -45,7 +45,7 @@ func cleanupStaleCRLabels(labels map[string]string) map[string]string {
 }
 
 func cleanupStaleSelectorLabels(labels map[string]string) map[string]string {
-	for _, label := range x100SelectorLabels {
+	for _, label := range x100SelectorLabelsForDeletion {
 		if _, ok := labels[label]; ok {
 			delete(labels, label)
 		}
@@ -160,6 +160,15 @@ func hasX100RollingBackUpgradeLabel(labels map[string]string) bool {
 func hasX100RolledBackLabel(labels map[string]string) bool {
 	if _, ok := labels[x100RolledBack]; ok {
 		if labels[x100RolledBack] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasX100EnablingFirstPolicy(labels map[string]string) bool {
+	if _, ok := labels[x100EnablingFirstPolicy]; ok {
+		if labels[x100EnablingFirstPolicy] == "true" {
 			return true
 		}
 	}
@@ -676,6 +685,19 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 		return err
 	}
 
+	/***
+	if !hasX100EnablingFirstPolicy(labels) {
+		labels[x100EnablingFirstPolicy] = "true"
+		log.Log.Info(fmt.Sprintf("Labelling node %s with %s label",
+			node.ObjectMeta.Name, x100EnablingFirstPolicy))
+		node.SetLabels(labels)
+		err = c.rec.Update(context.TODO(), node)
+		if err != nil {
+			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
+		}
+	}
+	***/
+
 	// Force pod bringup sequence here
 	err = c.enablePodSelectorLabels(node)
 	if err != nil {
@@ -961,17 +983,69 @@ func (c *ControllerState) updateSwVersionLabels(node *corev1.Node) error {
 func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	// Apply the pod selector labels
 	labels := node.GetLabels()
-	for _, label := range x100SelectorLabels {
-		labels[label] = "true"
+	updateLabels := false
+	/***
+		Detect which labels are present
+		check in sequence fw -> hwmgr -> kmodule --> dplugin
+		Enable each label only after the completion flag is present
+		/var/podcheck/fw_pod_running,
+		/var/podcheck/hwmgr_pod_running,
+		for kmm check the ready label if present
+	***/
+
+	for index, label := range x100SelectorLabelsForCreation {
+		if _, ok := labels[label]; !ok {
+			// Skip the ones already applied
+			if index == 0 {
+				log.Log.Info("Skipping the processing for index 0 during enablePodSelectorLabels()")
+
+			} else if index < 3 {
+				// index = 1 (HwManager) and index = 2 (KModules)
+				if index == 1 || index == 2 {
+					podName := getPodNamePrefixFromIndex(index - 1)
+					log.Log.Info(fmt.Sprintf("podname fetched for index %v is %s", index-1, podName))
+					// Check if previous pod has signalled completion
+					isComplete, err := c.getPodCompletionStatus(node, podName, PodCompletionPath[index-1])
+					if err != nil {
+						return err
+					}
+					if !isComplete {
+						//return errors.New(fmt.Sprintf("PodCompletionStatus is incomplete for %s on node %s",
+						//	podName, node.GetName()))
+						log.Log.Info(fmt.Sprintf("PodCompletionStatus is incomplete for %s on node %s", podName, node.GetName()))
+						return errors.New(fmt.Sprintf("PodCompletionStatus is incomplete for %s on node %s", podName, node.GetName()))
+					}
+				}
+			} else {
+				// index == 3 (devicePlugin)
+				podName := getPodNamePrefixFromIndex(index - 1)
+
+				isKmmReady := hasKmmReadylabel(labels)
+				if !isKmmReady {
+					log.Log.Info(fmt.Sprintf("Pod %s is not ready on node %s", podName, node.GetName()))
+					return errors.New(fmt.Sprintf("PodCompletionStatus is incomplete for %s on node %s", podName, node.GetName()))
+				}
+			}
+			log.Log.Info(fmt.Sprintf("Setting %s to true", label))
+			labels[label] = "true"
+			updateLabels = true
+			break
+		}
 	}
 
-	node.SetLabels(labels)
-	err := c.rec.Update(context.TODO(), node)
-	if err != nil {
-		return fmt.Errorf("Unable to update labels on node %s , err %s", node.ObjectMeta.Name, err.Error())
+	if updateLabels {
+		node.SetLabels(labels)
+		log.Log.Info(fmt.Sprintf("Applying the updated labels %s from inside enablePodSelectorLabels to %s", labels, node.GetName()))
+		err := c.rec.Update(context.TODO(), node)
+		if err != nil {
+			return fmt.Errorf("Unable to label node %s with %v, err %s", node.ObjectMeta.Name,
+				x100SelectorLabelsForCreation, err.Error())
+		}
+	} else {
+		log.Log.Info(fmt.Sprintf("All relevant labels already enabled in enablePodSelectorLabels(), returning..."))
 	}
+
 	return nil
-
 }
 
 func (c *ControllerState) transitionToRollingBackUpgradeState(node *corev1.Node) error {

@@ -216,6 +216,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 				labels := node.GetLabels()
 				hasx100Attached := hasCustomX100Label(labels)
 				nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
+				nodeEnablingPodSelectors := hasX100EnablingFirstPolicy(labels)
 
 				if hasx100Attached {
 					// Processing worker nodes that have x100 card attached to them
@@ -229,6 +230,10 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						if nodehasOwnerPolicyDeletedLabel {
 							delete(labels, x100OwnerPolicyDeleted)
 						}
+						// Acts as a flag to identify that we need to reenter this loop
+						if !hasX100EnablingFirstPolicy(labels) {
+							labels[x100EnablingFirstPolicy] = "true"
+						}
 						// Enable individual pod selector labels to control deletion sequence
 						err = c.enablePodSelectorLabels(&node)
 						if err != nil {
@@ -241,6 +246,35 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						if err != nil {
 							return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100ActiveCR, err.Error())
 						}
+					} else if nodeEnablingPodSelectors {
+						// Enable individual pod selector labels to control creation sequence
+						log.Log.Info(fmt.Sprintf("Enabling Pod selector labels for node %s under policy %s",
+							node.ObjectMeta.Name, policy.ObjectMeta.Name))
+						err = c.enablePodSelectorLabels(&node)
+						if err != nil {
+							// allow the process to move ahead with daemonset creation
+							// instead of returning an error which could result in
+							// useless looping and no progress
+							return nil
+						}
+						/***
+						log.Log.Info("Marking Pod selector enablement as complete...")
+						// Remove the label
+						rnode := &corev1.Node{}
+						err, rnode = c.fetchUpdatedNodeInstance(&node)
+						if err != nil {
+							return err
+						}
+						labels = rnode.GetLabels()
+						delete(labels, x100EnablingFirstPolicy)
+
+						node.SetLabels(labels)
+						err = c.rec.Update(context.TODO(), &node)
+						if err != nil {
+							return fmt.Errorf("Unable to delete label node %s with %s, err %s",
+												node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
+						}
+						***/
 					} else {
 						/***
 							Handle policy deletion triggers here
