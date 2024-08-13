@@ -53,9 +53,34 @@ func cleanupStaleSelectorLabels(labels map[string]string) map[string]string {
 	return labels
 }
 
+func cleanupLabelsOnReboot(labels map[string]string) map[string]string {
+	/***
+	       Selector labels are not removed as they are terminated in
+	       sequence.Add node to params to identify if pods were terminated
+	       on this node
+	***/
+
+	// Remove Reboot labels related labels
+	for _, label := range x100DeleteOnRebootLabels {
+		if _, ok := labels[label]; ok {
+			delete(labels, label)
+		}
+	}
+	return labels
+}
+
 func hasX100AggregationBlockedLabel(labels map[string]string) bool {
 	if _, ok := labels[x100NodeAggregationBlocked]; ok {
 		if labels[x100NodeAggregationBlocked] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasX100ComingUpAfterRebootLabel(labels map[string]string) bool {
+	if _, ok := labels[X100ComingUpAfterReboot]; ok {
+		if labels[X100ComingUpAfterReboot] == "true" {
 			return true
 		}
 	}

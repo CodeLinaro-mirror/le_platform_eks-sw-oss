@@ -32,6 +32,10 @@ const (
 	KModuleCMName      = "csm-x100-kmmdockerfile"
 	DevicePluginDsName = "csm-x100-deviceplugin-ds"
 )
+
+const (
+	X100ComingUpAfterReboot = "qualcomm.com/x100.rebooted"
+)
 const (
 	FirmwareDsSelectorLabelKey   = "qualcomm.com/x100.fw.present"
 	HwMgrDsSelectorLabelKey      = "qualcomm.com/x100.hwmgr.present"
@@ -104,6 +108,7 @@ var x100CrdLabels = []string{
 	x100OwnerPolicyDeleted,
 	x100TeardownCompleted,
 	x100EnablingFirstPolicy,
+	X100ComingUpAfterReboot,
 	x100NodeAggregationBlocked,
 }
 
@@ -116,6 +121,21 @@ var x100StatusLabels = []string{
 	x100UpgradeFailed,
 	//x100RolledBack,
 	x100TeardownCompleted,
+}
+
+var x100DeleteOnRebootLabels = []string{
+	x100CountOnNode,
+	x100BootupSuccess,
+	x100BootupSuccessCount,
+	x100BootupFailedCount,
+	x100BootupStatusMarked,
+	x100Upgrading,
+	x100UpgradeFailed,
+	x100RollingBackUpgrade,
+	x100RolledBack,
+	x100OwnerPolicyDeleted,
+	x100TeardownCompleted,
+	x100EnablingFirstPolicy,
 }
 
 var x100TransientStateLabels = []string{

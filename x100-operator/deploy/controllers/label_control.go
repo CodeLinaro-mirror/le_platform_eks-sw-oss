@@ -217,6 +217,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 				hasx100Attached := hasCustomX100Label(labels)
 				nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
 				nodeEnablingPodSelectors := hasX100EnablingFirstPolicy(labels)
+				nodeHasRebooted := hasX100ComingUpAfterRebootLabel(labels)
 
 				if hasx100Attached {
 					// Processing worker nodes that have x100 card attached to them
@@ -275,6 +276,33 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 												node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
 						}
 						***/
+					} else if nodeHasRebooted {
+						log.Log.Info(fmt.Sprintf("[Reboot] Terminating pods for node %s on reboot", node.ObjectMeta.Name))
+
+						if !hasX100TeardownCompletedLabel(labels) {
+							err = c.teardownX100ManagementPolicyOwnedPodsOnNode(&node)
+							if err != nil {
+								return err
+							}
+							log.Log.Info(fmt.Sprintf("[Reboot] Termination completed, setting %s to true", x100TeardownCompleted))
+							// Mark teardown sequence completion
+							labels[x100TeardownCompleted] = "true"
+
+							node.SetLabels(labels)
+							err := c.rec.Update(context.TODO(), &node)
+							if err != nil {
+								return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
+									x100TeardownCompleted, err.Error())
+							}
+						}
+
+						log.Log.Info(fmt.Sprintf("[Reboot] Enabling Pod selector labels for node %s under policy %s",
+							node.ObjectMeta.Name, policy.ObjectMeta.Name))
+						err = c.enablePodSelectorLabels(&node)
+						if err != nil {
+							return err
+						}
+						log.Log.Info(fmt.Sprintf("[Reboot] Enabled pod selector labels for node %s after reboot", node.ObjectMeta.Name))
 					} else {
 						/***
 							Handle policy deletion triggers here

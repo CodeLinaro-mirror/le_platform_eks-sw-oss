@@ -186,6 +186,47 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, nil
 	}
 
+	// Reboot path handling
+	opts := []client.ListOption{}
+	list := &corev1.NodeList{}
+	err = r.List(context.TODO(), list, opts...)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	reconcilerTriggeredOnReboot := false
+	for _, node := range list.Items {
+		for _, ns := range policyInstance.Spec.NodeSelector {
+			if node.ObjectMeta.Name == ns {
+				labels := node.GetLabels()
+				for _, condition := range node.Status.Conditions {
+					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
+						reconcilerTriggeredOnReboot = true
+
+						if !hasX100ComingUpAfterRebootLabel(labels) {
+							log.Log.Info(fmt.Sprintf("Reconciler loop hit on reboot detection, setting reboot label"))
+							// We entered reconcile due to node entering reboot path
+							labels = cleanupLabelsOnReboot(labels)
+							// Label to indicate that we were in reboot path
+							labels[X100ComingUpAfterReboot] = "true"
+							node.SetLabels(labels)
+							err = r.Update(context.TODO(), &node)
+							if err != nil {
+								log.Log.Info(fmt.Sprintf("Unable to reset node labels for %s in reboot path, err %s", node.ObjectMeta.Name, err.Error()))
+								return reconcile.Result{}, err
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if reconcilerTriggeredOnReboot {
+		log.Log.Info("Exiting reconciler, waiting for one or more nodes to reboot")
+		return reconcile.Result{}, nil
+	}
+
 	// State machine takes care of analyzing the state
 	overallStatus := xcardv1.Operational
 
@@ -347,6 +388,25 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 			}
 
 			newLabels := e.ObjectNew.GetLabels()
+			newNode := e.ObjectNew.(*corev1.Node)
+
+			//log.Log.Info("Node Labels Updated - Enque reconcile requests on available CRs")
+			//log.Log.Info("Node Labels ->", "newLabels: ", newLabels)
+			// Trigger reconcile loop on transition to notReady state
+			// Detect the same in reconcile loop
+			// Enter this only if we are coming from the reboot path
+			// as we cleanup labels in this path
+			isX100Rebooting := hasX100ComingUpAfterRebootLabel(newLabels)
+			if !isX100Rebooting {
+				for _, condition := range newNode.Status.Conditions {
+					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
+						return true
+					}
+				}
+			} else {
+				log.Log.Info("Detected reboot label while handling update event, triggering reconciler")
+				return true
+			}
 
 			hasPCILabel := hasX100PCILabels(newLabels)
 			hasCustomLabel := hasCustomX100Label(newLabels)

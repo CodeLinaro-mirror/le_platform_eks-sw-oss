@@ -147,12 +147,16 @@ func (c *ControllerState) endState() (xcardv1.State, error) {
 		labels := node.GetLabels()
 		nodeHasRolledBackLabel := hasX100RolledBackLabel(labels)
 		nodeHasEnablingFirstPolicyLabel := hasX100EnablingFirstPolicy(labels)
+		hasX100RebootedLabel := hasX100ComingUpAfterRebootLabel(labels)
 
 		if nodeHasRolledBackLabel {
 			delete(labels, x100RolledBack)
 		}
 		if nodeHasEnablingFirstPolicyLabel {
 			delete(labels, x100EnablingFirstPolicy)
+		}
+		if hasX100RebootedLabel {
+			delete(labels, X100ComingUpAfterReboot)
 		}
 
 		node.SetLabels(labels)
