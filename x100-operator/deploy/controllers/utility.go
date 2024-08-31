@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/remotecommand"
 	"os"
 	"regexp"
@@ -395,6 +396,42 @@ func getPodNamePrefixFromIndex(index int) string {
 	return name
 }
 
+func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string]string,
+	verifyLabel string, opType string) error {
+	updatedNode := &corev1.Node{}
+	maxRetryCount := 3
+
+	for count := 0; count < maxRetryCount; count++ {
+		node.SetLabels(labels)
+		err := c.rec.Update(context.TODO(), node)
+		if err != nil {
+			if kerrors.IsConflict(err) {
+				err := c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, updatedNode)
+				if err != nil {
+					continue
+				}
+				node = updatedNode
+			}
+			// Could be a temporary glitch, retry
+		} else {
+			// Successful update
+			updatedLabels := node.GetLabels()
+			if opType == LabelUpdateAdditionType {
+				if _, ok := updatedLabels[verifyLabel]; ok {
+					return nil
+				}
+			} else if opType == LabelUpdateDeletionType {
+				if _, ok := updatedLabels[verifyLabel]; !ok {
+					return nil
+				}
+			} else {
+				continue
+			}
+			return nil
+		}
+	}
+	return errors.New("Failed to update node labels")
+}
 func (c *ControllerState) createNFDResources() error {
 	/***
 		NFD resources need to be available beforehand
@@ -674,8 +711,14 @@ func (c *ControllerState) markHealthCheckedforCurrentCR() {
 			if hasx100Upgrading && !hasX100BootupSuccess {
 				labels[x100UpgradeFailed] = labels[x100SwVersion]
 			}
+			/***
 			node.SetLabels(labels)
 			err = c.rec.Update(context.TODO(), &node)
+			if err != nil {
+				log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ", x100BootupStatusMarked, err.Error())
+			}
+			***/
+			err = c.setX100NodeLabels(&node, labels, x100BootupStatusMarked, LabelUpdateAdditionType)
 			if err != nil {
 				log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ", x100BootupStatusMarked, err.Error())
 			}
@@ -744,7 +787,8 @@ func (c *ControllerState) transitionToUpgradingState(node *corev1.Node) error {
 		labels[x100Upgrading] = "true"
 
 		node.SetLabels(labels)
-		err := c.rec.Update(context.TODO(), node)
+		err := c.setX100NodeLabels(node, labels, x100Upgrading, LabelUpdateAdditionType)
+		//err := c.rec.Update(context.TODO(), node)
 		if err != nil {
 			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
 				x100Upgrading, err.Error())
@@ -823,7 +867,8 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if _, ok := labels[DevicePluginSelectorLabelKey]; ok {
 		delete(labels, DevicePluginSelectorLabelKey)
 		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), node)
+		//err = c.rec.Update(context.TODO(), node)
+		err = c.setX100NodeLabels(node, labels, DevicePluginSelectorLabelKey, LabelUpdateDeletionType)
 		if err != nil {
 			return fmt.Errorf("Unable to remove label %s from node %s, err %s", DevicePluginSelectorLabelKey,
 				node.ObjectMeta.Name, err.Error())
@@ -854,7 +899,8 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if _, ok := labels[HwMgrDsSelectorLabelKey]; ok {
 		delete(labels, HwMgrDsSelectorLabelKey)
 		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), node)
+		err = c.setX100NodeLabels(node, labels, HwMgrDsSelectorLabelKey, LabelUpdateDeletionType)
+		//err = c.rec.Update(context.TODO(), node)
 		if err != nil {
 			return fmt.Errorf("Unable to remove label %s from node %s, err %s", HwMgrDsSelectorLabelKey,
 				node.ObjectMeta.Name, err.Error())
@@ -885,7 +931,8 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if _, ok := labels[KModuleSelectorLabelKey]; ok {
 		delete(labels, KModuleSelectorLabelKey)
 		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), node)
+		err = c.setX100NodeLabels(node, labels, KModuleSelectorLabelKey, LabelUpdateDeletionType)
+		//err = c.rec.Update(context.TODO(), node)
 		if err != nil {
 			return fmt.Errorf("Unable to remove label %s from node %s, err %s", KModuleSelectorLabelKey, node.ObjectMeta.Name, err.Error())
 		}
@@ -916,7 +963,8 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if _, ok := labels[FirmwareDsSelectorLabelKey]; ok {
 		delete(labels, FirmwareDsSelectorLabelKey)
 		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), node)
+		//err = c.rec.Update(context.TODO(), node)
+		err = c.setX100NodeLabels(node, labels, FirmwareDsSelectorLabelKey, LabelUpdateDeletionType)
 		if err != nil {
 			return fmt.Errorf("Unable to remove label %s from node %s, err %s", FirmwareDsSelectorLabelKey,
 				node.ObjectMeta.Name, err.Error())
@@ -983,10 +1031,11 @@ func (c *ControllerState) updateSwVersionLabels(node *corev1.Node) error {
 			delete(labels, x100NodeAggregationBlocked)
 		}
 		node.SetLabels(labels)
-		err := c.rec.Update(context.TODO(), node)
+		err := c.setX100NodeLabels(node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
+		//err := c.rec.Update(context.TODO(), node)
 		if err != nil {
 			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
-				x100SwVersion, err.Error())
+				x100TeardownCompleted, err.Error())
 		}
 	}
 	return nil
@@ -996,6 +1045,7 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	// Apply the pod selector labels
 	labels := node.GetLabels()
 	updateLabels := false
+	currentIndex := 0
 	/***
 		Detect which labels are present
 		check in sequence fw -> hwmgr -> kmodule --> dplugin
@@ -1006,6 +1056,7 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	***/
 
 	for index, label := range x100SelectorLabelsForCreation {
+		currentIndex = index
 		if _, ok := labels[label]; !ok {
 			// Skip the ones already applied
 			if index == 0 {
@@ -1048,7 +1099,8 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	if updateLabels {
 		node.SetLabels(labels)
 		log.Log.Info(fmt.Sprintf("Applying the updated labels %s from inside enablePodSelectorLabels to %s", labels, node.GetName()))
-		err := c.rec.Update(context.TODO(), node)
+		//err := c.rec.Update(context.TODO(), node)
+		err := c.setX100NodeLabels(node, labels, x100SelectorLabelsForCreation[currentIndex], LabelUpdateAdditionType)
 		if err != nil {
 			return fmt.Errorf("Unable to label node %s with %v, err %s", node.ObjectMeta.Name,
 				x100SelectorLabelsForCreation, err.Error())
@@ -1072,7 +1124,8 @@ func (c *ControllerState) transitionToRollingBackUpgradeState(node *corev1.Node)
 		labels[x100RollingBackUpgrade] = "true"
 
 		node.SetLabels(labels)
-		err := c.rec.Update(context.TODO(), node)
+		err := c.setX100NodeLabels(node, labels, x100RollingBackUpgrade, LabelUpdateAdditionType)
+		//err := c.rec.Update(context.TODO(), node)
 		if err != nil {
 			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
 				x100RollingBackUpgrade, err.Error())

@@ -210,9 +210,11 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							// Label to indicate that we were in reboot path
 							labels[X100ComingUpAfterReboot] = "true"
 							node.SetLabels(labels)
-							err = r.Update(context.TODO(), &node)
+							//err = r.Update(context.TODO(), &node)
+							err = x100Ctrl.setX100NodeLabels(&node, labels, X100ComingUpAfterReboot, LabelUpdateAdditionType)
 							if err != nil {
-								log.Log.Info(fmt.Sprintf("Unable to reset node labels for %s in reboot path, err %s", node.ObjectMeta.Name, err.Error()))
+								log.Log.Info(fmt.Sprintf("Unable to reset node labels for %s in reboot path, err %s",
+									node.ObjectMeta.Name, err.Error()))
 								return reconcile.Result{}, err
 							}
 						}
@@ -233,8 +235,8 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 	// Init the state machine
 	err = x100Ctrl.start(r, policyInstance, &policyInstance.Spec)
 	if err != nil {
-		log.Log.Error(err, "Failed to initialize X100ManagementPolicy controller during start()")
-		return ctrl.Result{}, err
+		log.Log.Info("Failed to initialize X100ManagementPolicy controller during start()")
+		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	}
 
 	//If Policy already exists, has no nodes , no need to Reconcile
@@ -249,11 +251,12 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 			policyInstance.ObjectMeta.Name, len(policyInstance.Spec.NodeSelector)))
 	}
 
-	for {
+	retryCount := 100
+	for retryCount > 0 {
 		// Trigger the state machine
 		status, err := x100Ctrl.triggerStateMachine(r, policyInstance)
 		if err != nil {
-			logger.Error(err, "Failed to complete X100ManagementPolicy controller state machine during triggerStateMachine()")
+			log.Log.Info("Failed to complete X100ManagementPolicy controller state machine during triggerStateMachine()")
 			return ctrl.Result{RequeueAfter: time.Second * 20}, err
 		}
 
@@ -300,12 +303,15 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 			}
 			err = x100Ctrl.labelX100NodeswithCR(policyInstance, &policyInstance.Spec)
 			if err != nil {
-				return ctrl.Result{RequeueAfter: time.Second * 10}, err
+				//return ctrl.Result{RequeueAfter: time.Second * 10}, err
+				return ctrl.Result{RequeueAfter: time.Second * 10}, nil
 			}
 			// introduce an artificial sleep to avoid too much looping here
 			// Give time to pods to come up
 			time.Sleep(5 * time.Second)
 		}
+
+		retryCount--
 		if x100Ctrl.stateMachineCompleted() {
 			break
 		}

@@ -43,6 +43,11 @@ const (
 	DevicePluginSelectorLabelKey = "qualcomm.com/x100.deviceplugin.present"
 )
 
+const (
+	LabelUpdateAdditionType = "addition"
+	LabelUpdateDeletionType = "deletion"
+)
+
 // Sequence for deletion
 var x100SelectorLabelsForDeletion = []string{
 	DevicePluginSelectorLabelKey,

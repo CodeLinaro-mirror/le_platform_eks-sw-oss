@@ -159,12 +159,20 @@ func (c *ControllerState) endState() (xcardv1.State, error) {
 			delete(labels, X100ComingUpAfterReboot)
 		}
 
+		/***
 		node.SetLabels(labels)
 		err = c.rec.Update(context.TODO(), &node)
 		if err != nil {
 			return xcardv1.NotOperational, fmt.Errorf("Unable to delete label node %s with %s, err %s",
 				node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
 		}
+		***/
+		err = c.setX100NodeLabels(&node, labels, x100EnablingFirstPolicy, LabelUpdateDeletionType)
+		if err != nil {
+			return xcardv1.NotOperational, fmt.Errorf("Unable to delete label node %s with %s, err %s",
+				node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
+		}
+
 		log.Log.Info(fmt.Sprintf("Reached endstate for node %s", node.ObjectMeta.Name))
 	}
 

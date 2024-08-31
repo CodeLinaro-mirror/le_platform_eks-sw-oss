@@ -100,7 +100,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 	log.Log.Info("labelX100NodeswithCR() ", "Nodes list length from CRD ", len(nodeInCRSelectorList))
 
 	if len(nodeInCRSelectorList) == 0 {
-		log.Log.Info(fmt.Sprintf("Selector list is empty for policy %s, applying to all nodes under no policy", policy.ObjectMeta.Name))
+		log.Log.Info(fmt.Sprintf("Selector list is empty for policy %s, applying to all nodes under no policy",
+			policy.ObjectMeta.Name))
 		// fetch all nodes and filter ones that have no active policy associated with them
 		opts := []client.ListOption{}
 		list := &corev1.NodeList{}
@@ -243,7 +244,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						// Fetch updated node Instance
 						log.Log.Info(fmt.Sprintf("Labelling node %s with activeCR label", node.ObjectMeta.Name))
 						node.SetLabels(labels)
-						err = c.rec.Update(context.TODO(), &node)
+						//err = c.rec.Update(context.TODO(), &node)
+						err = c.setX100NodeLabels(&node, labels, x100ActiveCR, LabelUpdateAdditionType)
 						if err != nil {
 							return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100ActiveCR, err.Error())
 						}
@@ -289,7 +291,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 							labels[x100TeardownCompleted] = "true"
 
 							node.SetLabels(labels)
-							err := c.rec.Update(context.TODO(), &node)
+							//err := c.rec.Update(context.TODO(), &node)
+							err := c.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
 							if err != nil {
 								return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
 									x100TeardownCompleted, err.Error())
@@ -369,7 +372,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 									// Todo What if the label attachment fails, how to fallback
 									labels[x100NodeAggregationBlocked] = "true"
 									node.SetLabels(labels)
-									err = c.rec.Update(context.TODO(), &node)
+									err = c.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateDeletionType)
+									//err = c.rec.Update(context.TODO(), &node)
 									if err != nil {
 										return fmt.Errorf("Unable to remove label %s from node %s, err %s",
 											x100NodeAggregationBlocked, node.ObjectMeta.Name, err.Error())
@@ -404,7 +408,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 											}
 										}
 										node.SetLabels(labels)
-										err = c.rec.Update(context.TODO(), &node)
+										//err = c.rec.Update(context.TODO(), &node)
+										err = c.setX100NodeLabels(&node, labels, x100RolledBack, LabelUpdateDeletionType)
 										if err != nil {
 											return fmt.Errorf("Unable to remove label %s from node %s, err %s", x100RolledBack, node.ObjectMeta.Name, err.Error())
 										}
@@ -468,12 +473,18 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 			} else {
 				labels[x100LabelKey] = x100LabelValue
 			}
-
+			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
+			if err != nil {
+				return fmt.Errorf("Unable to label node %s with %s, err %s",
+					node.ObjectMeta.Name, x100LabelKey, err.Error())
+			}
+			/***
 			node.SetLabels(labels)
 			err = n.rec.Update(context.TODO(), &node)
 			if err != nil {
 				return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
 			}
+			***/
 			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
 		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
 			// previously labelled node and no longer has X100s'
@@ -484,7 +495,8 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 			}
 			labels[x100LabelKey] = "false"
 			node.SetLabels(labels)
-			err = n.rec.Update(context.TODO(), &node)
+			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
+			//err = c.rec.Update(context.TODO(), &node)
 			if err != nil {
 				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
 			}
@@ -572,7 +584,8 @@ func (c *ControllerState) labelx100bootupStatusforNodes() xcardv1.State {
 				}
 
 				node.SetLabels(labels)
-				err = c.rec.Update(context.TODO(), &node)
+				err = c.setX100NodeLabels(&node, labels, x100BootupSuccess, LabelUpdateAdditionType)
+				//err = c.rec.Update(context.TODO(), &node)
 				if err != nil {
 					log.Log.Info("labelx100bootupStatusforNodes: Unable to label node", node.ObjectMeta.Name, " with ", x100BootupSuccess, err.Error())
 				} else {

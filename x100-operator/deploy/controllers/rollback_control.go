@@ -104,10 +104,11 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 						// Mark teardown sequence completion
 						labels[x100TeardownCompleted] = "true"
 						node.SetLabels(labels)
-						err := c.rec.Update(context.TODO(), node)
+						//err := c.rec.Update(context.TODO(), node)
+						err := c.setX100NodeLabels(node, labels, x100SwVersion, LabelUpdateAdditionType)
 						if err != nil {
 							return xcardv1.NotOperational, fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
-								x100SwVersion, err.Error())
+								x100TeardownCompleted, err.Error())
 						}
 					}
 
@@ -151,7 +152,8 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 					labels[x100PriorCR] = ""
 
 					node.SetLabels(labels)
-					err = c.rec.Update(context.TODO(), node)
+					//err = c.rec.Update(context.TODO(), node)
+					err = c.setX100NodeLabels(node, labels, x100ActiveCR, LabelUpdateAdditionType)
 					if err != nil {
 						log.Log.Info("Unable to update activeCR during rollback on node %s , err %s", node.ObjectMeta.Name, err.Error())
 						return xcardv1.NotOperational, err
@@ -161,7 +163,8 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 						delete(labels, x100RollingBackUpgrade)
 						labels[x100RolledBack] = "true"
 						node.SetLabels(labels)
-						err = c.rec.Update(context.TODO(), node)
+						//err = c.rec.Update(context.TODO(), node)
+						err = c.setX100NodeLabels(node, labels, x100RolledBack, LabelUpdateAdditionType)
 						if err != nil {
 							log.Log.Info("Unable to label node %s with rollback completion, err %s", node.ObjectMeta.Name, err.Error())
 						}
