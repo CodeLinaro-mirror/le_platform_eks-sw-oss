@@ -202,6 +202,11 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 				for _, condition := range node.Status.Conditions {
 					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
 						reconcilerTriggeredOnReboot = true
+						if hasX100UpgradeFailedLabel(labels) {
+							// Prioritize upgrade rollback over reboot
+							log.Log.Info(fmt.Sprintf("Not setting reboot label to let pending downgrade resume later"))
+							return reconcile.Result{}, nil
+						}
 
 						if !hasX100ComingUpAfterRebootLabel(labels) {
 							log.Log.Info(fmt.Sprintf("Reconciler loop hit on reboot detection, setting reboot label"))
