@@ -545,41 +545,48 @@ func (c *ControllerState) labelx100bootupStatusforNodes() xcardv1.State {
 					nodesCount--
 					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100BootupStatusMarked label: Removing Node ", node.GetName())
 					continue
+				} else if hasX100ComingUpAfterRebootLabel(labels) && !hasX100TeardownCompletedLabel(labels) {
+					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100ComingUpAfterRebootLabel label but termination pending: Removing Node ",
+						node.GetName())
+					// Very small time window where older resources exist after reboot
+					// Avoid adding any status labels at the moment
+					// We requeue for entire policy
+					return xcardv1.NotOperational
 				}
 			}
 
-			x100count, err := c.getX100CardCountOnNode(&node)
+			x100count, _ := c.getX100CardCountOnNode(&node)
 			if x100count > 0 {
 				labels = node.GetLabels()
 				labels[x100CountOnNode] = strconv.Itoa(x100count)
-				node.SetLabels(labels)
-				err = c.rec.Update(context.TODO(), &node)
-
-				if err != nil {
-					log.Log.Info("labelx100bootupStatusforNodes: Unable to label node", node.ObjectMeta.Name, " with ", x100CountOnNode, err.Error())
-				} else {
-					log.Log.Info("labelx100bootupStatusforNodes: X100 Count on Node", node.ObjectMeta.Name, x100count)
-				}
+				log.Log.Info("labelx100bootupStatusforNodes: X100 Count on Node",
+					node.GetName(), x100count)
 
 				successBootCount, failedBootCount, err := c.getX100BootupStatusOnNode(&node, x100count)
-				labels = node.GetLabels()
+				labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
 				if err != nil {
-					log.Log.Info("labelx100bootupStatusforNodes: Unable to get X100 Bootup status for node", node.ObjectMeta.Name, err.Error())
+					log.Log.Info("labelx100bootupStatusforNodes: Unable to get X100 Bootup status for node",
+						node.ObjectMeta.Name, err.Error())
 					labels[x100BootupSuccess] = "unknown"
-					labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
-				} else if successBootCount+failedBootCount != x100count {
-					log.Log.Info("labelx100bootupStatusforNodes: Success X100 Bootup for node", node.ObjectMeta.Name, successBootCount, ", Failed bootup:", failedBootCount)
-					labels[x100BootupSuccess] = "unknown"
-					labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
 				} else {
-					nodesCount--
-					if successBootCount == x100count {
-						labels[x100BootupSuccess] = "true"
-					}
-					labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
-					if failedBootCount > 0 {
-						labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
-						labels[x100BootupSuccess] = "false"
+					log.Log.Info("labelx100bootupStatusforNodes: Bootup success count for node",
+						node.ObjectMeta.Name, successBootCount,
+						", Failed bootup:", failedBootCount)
+					if successBootCount+failedBootCount != x100count {
+						labels[x100BootupSuccess] = "unknown"
+						log.Log.Info(fmt.Sprintf("Boot status not available for all cards on node %s",
+							node.GetName()))
+					} else {
+						nodesCount--
+						if successBootCount == x100count {
+							labels[x100BootupSuccess] = "true"
+							log.Log.Info(fmt.Sprintf("All cards booted successfully on node %s", node.GetName()))
+						} else if failedBootCount > 0 {
+							labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
+							labels[x100BootupSuccess] = "false"
+							log.Log.Info(fmt.Sprintf("%v cards failed to boot successfully on node %s",
+								labels[x100BootupFailedCount], node.GetName()))
+						}
 					}
 				}
 

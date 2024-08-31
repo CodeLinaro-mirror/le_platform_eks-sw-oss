@@ -692,24 +692,36 @@ func (c *ControllerState) markHealthCheckedforCurrentCR() {
 	for _, node := range node_list.Items {
 		labels := node.GetLabels()
 		if isX100RunningWithPolicy(labels, currentCR) {
+			hasX100BootupSuccess := true
 			if _, ok := labels[x100BootupSuccess]; ok {
 				labels[x100BootupStatusMarked] = "true"
 				if labels[x100BootupSuccess] != "true" {
 					labels[x100BootupSuccess] = "false"
+					hasX100BootupSuccess = false
 				}
 			}
-			hasX100BootupSuccess := hasX100BootupSuccessLabel(labels)
+			log.Log.Info(fmt.Sprintf("Marking bootSuccess label as %s on node %s",
+				labels[x100BootupSuccess], node.GetName()))
+			// BootUp success is not updated to the node yet
+			// Infer from the to be updated label map
+			//hasX100BootupSuccess := labels[x100BootupSuccess]
 			hasx100Upgrading := hasX100UpgradingLabel(labels)
 			hasx100TeardownCompleted := hasX100TeardownCompletedLabel(labels)
 			if hasx100Upgrading {
 				delete(labels, x100Upgrading)
+				log.Log.Info(fmt.Sprintf("Deleting label %s on node %s",
+					x100Upgrading, node.GetName()))
 			}
 			if hasx100TeardownCompleted {
 				delete(labels, x100TeardownCompleted)
+				log.Log.Info(fmt.Sprintf("Deleting label %s on node %s",
+					x100TeardownCompleted, node.GetName()))
 			}
 
 			if hasx100Upgrading && !hasX100BootupSuccess {
 				labels[x100UpgradeFailed] = labels[x100SwVersion]
+				log.Log.Info(fmt.Sprintf("Marking upgrade as failed on node %s as bootSuccess is %v",
+					node.GetName(), hasX100BootupSuccess))
 			}
 			/***
 			node.SetLabels(labels)
