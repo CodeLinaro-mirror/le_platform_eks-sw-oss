@@ -458,20 +458,30 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 		labels := node.GetLabels()
 		hasCustomLabel := hasCustomX100Label(labels)
 		hasPCILabel := hasX100PCILabels(labels)
+		hasIsolateLabel := hasX100IsolateLabel(labels)
 		isNodeSchedulable := !n.isNodeUnschedulable(&node)
 
 		if !hasCustomLabel && hasPCILabel && isNodeSchedulable {
-			// label node with the custom label
-			labels[x100LabelKey] = x100LabelValue
+			// Check for Isolate Label before applying Custom Label
+			if hasIsolateLabel {
+				labels[x100LabelKey] = "false"
+			} else {
+				labels[x100LabelKey] = x100LabelValue
+			}
+
 			node.SetLabels(labels)
 			err = n.rec.Update(context.TODO(), &node)
 			if err != nil {
 				return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
 			}
 			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
-		} else if hasCustomLabel && !hasPCILabel {
+		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
 			// previously labelled node and no longer has X100s'
 			// reset the custom label as it is not valid
+			if hasIsolateLabel {
+				log.Log.Info(fmt.Sprintf("Node %s has been isolated, removed from further processing.",
+					node.ObjectMeta.Name))
+			}
 			labels[x100LabelKey] = "false"
 			node.SetLabels(labels)
 			err = n.rec.Update(context.TODO(), &node)

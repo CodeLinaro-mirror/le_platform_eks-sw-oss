@@ -73,6 +73,7 @@ var PodCompletionPath = []string{
 const (
 	x100LabelKey               = "qualcomm.com/x100.present"
 	x100LabelValue             = "true"
+	x100IsolateKey             = "qualcomm.com/x100.isolate"
 	x100ActiveCR               = "qualcomm.com/x100.activeCR"
 	x100PriorCR                = "qualcomm.com/x100.priorCR"
 	x100SwVersion              = "qualcomm.com/x100.swversion"

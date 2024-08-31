@@ -230,6 +230,15 @@ func hasX100PCILabels(labels map[string]string) bool {
 	return hasX100PCILabel(labels)
 }
 
+func hasX100IsolateLabel(labels map[string]string) bool {
+	if _, ok := labels[x100IsolateKey]; ok {
+		if labels[x100IsolateKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasKmmReadylabel(labels map[string]string) bool {
 	for k, _ := range labels {
 		if strings.Contains(k, kmmReadyLabel) {
@@ -710,19 +719,6 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 		return err
 	}
 
-	/***
-	if !hasX100EnablingFirstPolicy(labels) {
-		labels[x100EnablingFirstPolicy] = "true"
-		log.Log.Info(fmt.Sprintf("Labelling node %s with %s label",
-			node.ObjectMeta.Name, x100EnablingFirstPolicy))
-		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), node)
-		if err != nil {
-			return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
-		}
-	}
-	***/
-
 	// Force pod bringup sequence here
 	err = c.enablePodSelectorLabels(node)
 	if err != nil {
@@ -730,16 +726,7 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 		//return err
 		return nil
 	}
-	/***
-	labels = node.GetLabels()
-	delete(labels, x100EnablingFirstPolicy)
-	node.SetLabels(labels)
-	err = c.rec.Update(context.TODO(), node)
-	if err != nil {
-		return fmt.Errorf("Unable to delete label node %s with %s, err %s",
-			node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
-	}
-	***/
+
 	log.Log.Info(fmt.Sprintf("Enabled pod selector labels for node %s", node.GetName()))
 	return nil
 }
