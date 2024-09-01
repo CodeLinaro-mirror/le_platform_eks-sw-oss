@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"time"
@@ -99,6 +100,12 @@ func (c *ControllerState) createResources() (int, xcardv1.State, error) {
 	for _, robj := range asset.objectMappings {
 		cardstate, err := createKindResource(*c, robj.key, robj.value)
 		if err != nil {
+			if errors.IsAlreadyExists(err) {
+				if cardstate != xcardv1.Operational {
+					result = xcardv1.NotOperational
+				}
+				continue
+			}
 			return earlyExitState, cardstate, err
 		}
 		if cardstate != xcardv1.Operational {

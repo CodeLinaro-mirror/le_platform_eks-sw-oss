@@ -21,6 +21,7 @@ package controllers
 import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	xcardv1 "x100-operator/api/v1"
@@ -113,6 +114,11 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 		nodesWithNoActiveCRLabel := []string{}
 		for _, node := range list.Items {
 			// get node labels
+			err := c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, &node)
+			if err != nil {
+				return err
+			}
+
 			labels := node.GetLabels()
 			hasx100Attached := hasCustomX100Label(labels)
 			nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
@@ -473,19 +479,14 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 			} else {
 				labels[x100LabelKey] = x100LabelValue
 			}
+
 			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
 			if err != nil {
 				return fmt.Errorf("Unable to label node %s with %s, err %s",
 					node.ObjectMeta.Name, x100LabelKey, err.Error())
 			}
-			/***
-			node.SetLabels(labels)
-			err = n.rec.Update(context.TODO(), &node)
-			if err != nil {
-				return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
-			}
-			***/
 			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
+
 		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
 			// previously labelled node and no longer has X100s'
 			// reset the custom label as it is not valid
@@ -496,7 +497,6 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 			labels[x100LabelKey] = "false"
 			node.SetLabels(labels)
 			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
-			//err = c.rec.Update(context.TODO(), &node)
 			if err != nil {
 				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
 			}
@@ -581,11 +581,13 @@ func (c *ControllerState) labelx100bootupStatusforNodes() xcardv1.State {
 						if successBootCount == x100count {
 							labels[x100BootupSuccess] = "true"
 							log.Log.Info(fmt.Sprintf("All cards booted successfully on node %s", node.GetName()))
-						} else if failedBootCount > 0 {
-							labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
+						} else {
+							if failedBootCount > 0 {
+								labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
+								log.Log.Info(fmt.Sprintf("%v cards failed to boot successfully on node %s",
+									labels[x100BootupFailedCount], node.GetName()))
+							}
 							labels[x100BootupSuccess] = "false"
-							log.Log.Info(fmt.Sprintf("%v cards failed to boot successfully on node %s",
-								labels[x100BootupFailedCount], node.GetName()))
 						}
 					}
 				}

@@ -323,7 +323,7 @@ func createNodeFeatureRule(n ControllerState, res nfdk8s.NodeFeatureRule) (xcard
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
-			return xcardv1.Operational, nil
+			return xcardv1.Operational, err
 		}
 		logger.Info("Couldn't create", "Error", err)
 		return xcardv1.NotOperational, err

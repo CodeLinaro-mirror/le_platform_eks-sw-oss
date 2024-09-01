@@ -83,13 +83,15 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 	for _, node := range list.Items {
 		labels := node.GetLabels()
 		if isX100RunningWithPolicy(labels, policyInstance.ObjectMeta.Name) {
+			log.Log.Info("Deleting policy which is running on current node")
 			labels = cleanupStaleCRLabels(labels)
 			labels = cleanupStaleSelectorLabels(labels)
 			if len(policylist.Items) > 1 {
 				labels[x100OwnerPolicyDeleted] = "true"
 			}
 			node.SetLabels(labels)
-			err = r.Update(context.TODO(), &node)
+			err = x100Ctrl.setX100NodeLabels(&node, labels, x100SwVersion, LabelUpdateDeletionType)
+			//err = r.Update(context.TODO(), &node)
 			if err != nil {
 				return fmt.Errorf("Unable to delete node label for %s , err %s", node.ObjectMeta.Name, err.Error())
 			}
@@ -104,7 +106,8 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 					delete(labels, x100LabelKey)
 				}
 				node.SetLabels(labels)
-				err = r.Update(context.TODO(), &node)
+				//err = r.Update(context.TODO(), &node)
+				err = x100Ctrl.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateDeletionType)
 				if err != nil {
 					return fmt.Errorf("Unable to delete node label for %s , err %s", node.ObjectMeta.Name, err.Error())
 				}
