@@ -399,13 +399,15 @@ func getPodNamePrefixFromIndex(index int) string {
 func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string]string,
 	verifyLabel string, opType string) error {
 	updatedNode := &corev1.Node{}
-	maxRetryCount := 3
+	maxRetryCount := 5
 
 	for count := 0; count < maxRetryCount; count++ {
 		node.SetLabels(labels)
 		err := c.rec.Update(context.TODO(), node)
 		if err != nil {
 			if kerrors.IsConflict(err) {
+				log.Log.Info(fmt.Sprintf("API server has new version for node %s, refetching",
+					node.GetName()))
 				err := c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, updatedNode)
 				if err != nil {
 					continue
@@ -413,25 +415,44 @@ func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string
 				node = updatedNode
 			}
 			// Could be a temporary glitch, retry
-		} else {
-			// Successful update
-			updatedLabels := node.GetLabels()
-			if opType == LabelUpdateAdditionType {
-				if _, ok := updatedLabels[verifyLabel]; ok {
-					return nil
-				}
-			} else if opType == LabelUpdateDeletionType {
-				if _, ok := updatedLabels[verifyLabel]; !ok {
-					return nil
-				}
-			} else {
-				continue
-			}
-			return nil
+			log.Log.Info(fmt.Sprintf("Unable to set label %s on node %s at the moment due to error, retrying",
+				verifyLabel, node.GetName()))
+			time.Sleep(time.Second * 1)
+			continue
 		}
+
+		// force the update propagation to API server
+		err = c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, node)
+		if err != nil {
+			time.Sleep(time.Second * 1)
+			continue
+		}
+
+		log.Log.Info(fmt.Sprintf("Fetching latest version of node %s from API server",
+			node.GetName()))
+
+		// Successful update
+		updatedLabels := node.GetLabels()
+		if opType == LabelUpdateAdditionType {
+			if _, ok := updatedLabels[verifyLabel]; ok {
+				log.Log.Info(fmt.Sprintf("Successfully applied label %s on node %s",
+					verifyLabel, node.GetName()))
+				return nil
+			}
+		} else if opType == LabelUpdateDeletionType {
+			if _, ok := updatedLabels[verifyLabel]; !ok {
+				log.Log.Info(fmt.Sprintf("Successfully deleted label %s on node %s",
+					verifyLabel, node.GetName()))
+				return nil
+			}
+		}
+
+		log.Log.Info(fmt.Sprintf("Unable to verify label %s for node %s at the moment, retrying",
+			verifyLabel, node.GetName()))
 	}
 	return errors.New("Failed to update node labels")
 }
+
 func (c *ControllerState) createNFDResources() error {
 	/***
 		NFD resources need to be available beforehand
@@ -439,6 +460,7 @@ func (c *ControllerState) createNFDResources() error {
 		labelX100NodeswithCR() then processes
 	***/
 	log.Log.Info("Creating NFD resources to label nodes with appropriate pci labels")
+	allowSleep := true
 	_ = createAssetMap(nfdResourcePath)
 
 	// Create the resources using  resources from AssetMap and creation callbacks
@@ -447,8 +469,15 @@ func (c *ControllerState) createNFDResources() error {
 	for _, robj := range asset.objectMappings {
 		_, err := createKindResource(*c, robj.key, robj.value)
 		if err != nil {
-			return err
+			if kerrors.IsAlreadyExists(err) {
+				allowSleep = false
+			} else {
+				return err
+			}
 		}
+	}
+	if allowSleep {
+		time.Sleep(10 * time.Second)
 	}
 	return nil
 }
@@ -484,6 +513,7 @@ func (c *ControllerState) getPodCompletionStatus(node *corev1.Node, podNamePrefi
 	}
 	return status, nil
 }
+
 func isModuleReady(moduleName string, n ControllerState) xcardv1.State {
 	log.Log.Info(fmt.Sprintf("Checking isModuleReady for %s module", moduleName))
 
@@ -694,17 +724,16 @@ func (c *ControllerState) markHealthCheckedforCurrentCR() {
 		if isX100RunningWithPolicy(labels, currentCR) {
 			hasX100BootupSuccess := true
 			if _, ok := labels[x100BootupSuccess]; ok {
-				labels[x100BootupStatusMarked] = "true"
 				if labels[x100BootupSuccess] != "true" {
-					labels[x100BootupSuccess] = "false"
 					hasX100BootupSuccess = false
+					labels[x100BootupSuccess] = "false"
 				}
+				labels[x100BootupStatusMarked] = "true"
 			}
+
 			log.Log.Info(fmt.Sprintf("Marking bootSuccess label as %s on node %s",
 				labels[x100BootupSuccess], node.GetName()))
-			// BootUp success is not updated to the node yet
-			// Infer from the to be updated label map
-			//hasX100BootupSuccess := labels[x100BootupSuccess]
+
 			hasx100Upgrading := hasX100UpgradingLabel(labels)
 			hasx100TeardownCompleted := hasX100TeardownCompletedLabel(labels)
 			if hasx100Upgrading {
