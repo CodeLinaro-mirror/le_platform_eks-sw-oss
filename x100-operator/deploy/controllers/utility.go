@@ -434,10 +434,12 @@ func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string
 		// Successful update
 		updatedLabels := node.GetLabels()
 		if opType == LabelUpdateAdditionType {
-			if _, ok := updatedLabels[verifyLabel]; ok {
-				log.Log.Info(fmt.Sprintf("Successfully applied label %s on node %s",
-					verifyLabel, node.GetName()))
-				return nil
+			if val, ok := updatedLabels[verifyLabel]; ok {
+				if val == labels[verifyLabel] {
+					log.Log.Info(fmt.Sprintf("Successfully applied label %s on node %s",
+											verifyLabel, node.GetName()))
+					return nil
+				}
 			}
 		} else if opType == LabelUpdateDeletionType {
 			if _, ok := updatedLabels[verifyLabel]; !ok {
