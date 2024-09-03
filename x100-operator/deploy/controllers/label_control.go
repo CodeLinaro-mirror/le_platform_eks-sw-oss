@@ -373,6 +373,10 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 										}
 									}
 									cr.Spec.NodeSelector = append(cr.Spec.NodeSelector[:index], cr.Spec.NodeSelector[index+1:]...)
+									if len(cr.Spec.NodeSelector) == 0 {
+										cr.Spec.NodeSelector = append(cr.Spec.NodeSelector, PlaceHolderNode)
+									}
+
 									c.rec.Update(context.TODO(), &cr)
 									if err != nil {
 										return fmt.Errorf("Unable to remove node %s from exisiting policy : %s. err %s",

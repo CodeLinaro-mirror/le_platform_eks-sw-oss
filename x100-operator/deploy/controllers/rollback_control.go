@@ -117,6 +117,18 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 						return xcardv1.NotOperational, err
 					}
 
+					// remove PlaceHolderNode node
+					pnodes := priorCRInstance.Spec.NodeSelector
+					var index int
+					for i, pnode := range pnodes {
+						if pnode == PlaceHolderNode {
+							log.Log.Info(fmt.Sprintf("PlaceHolderNode node found in %s", priorCRInstance.GetName()))
+							index = i
+							break
+						}
+					}
+					priorCRInstance.Spec.NodeSelector = append(priorCRInstance.Spec.NodeSelector[:index], priorCRInstance.Spec.NodeSelector[index+1:]...)
+
 					priorCRInstance.Spec.NodeSelector = append(priorCRInstance.Spec.NodeSelector, node.ObjectMeta.Name)
 					err = c.rec.Update(context.TODO(), priorCRInstance)
 					if err != nil {
@@ -125,7 +137,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 					}
 					log.Log.Info(fmt.Sprintf("Added node %s to policy %s's selector list", node.ObjectMeta.Name, priorCRInstance.ObjectMeta.Name))
 					//delete the Node from current policy
-					pnodes := policy.Spec.NodeSelector
+					pnodes = policy.Spec.NodeSelector
 					var ind int
 					for i, pnode := range pnodes {
 						if pnode == node.ObjectMeta.Name {
@@ -134,6 +146,9 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 						}
 					}
 					policy.Spec.NodeSelector = append(policy.Spec.NodeSelector[:ind], policy.Spec.NodeSelector[ind+1:]...)
+					if len(policy.Spec.NodeSelector) == 0 {
+						policy.Spec.NodeSelector = append(policy.Spec.NodeSelector, PlaceHolderNode)
+					}
 					c.rec.Update(context.TODO(), policy)
 					if err != nil {
 						log.Log.Info(fmt.Sprintf("Error encountered during rollback while updating node selector list for %s", policy.ObjectMeta.Name))
