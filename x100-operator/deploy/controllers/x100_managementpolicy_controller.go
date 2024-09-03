@@ -231,6 +231,15 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, nil
 	}
 
+	// Handle runtime emptied selector list
+	if len(policyInstance.Spec.NodeSelector) == 1 {
+		if policyInstance.Spec.NodeSelector[0] == PlaceHolderNode {
+			log.Log.Info(fmt.Sprintf("Policy %s has only placeholder node in selector list, returning...",
+										policyInstance.GetName()))
+			return reconcile.Result{}, nil
+		}
+	}
+
 	// Reboot path handling
 	opts := []client.ListOption{}
 	list := &corev1.NodeList{}
