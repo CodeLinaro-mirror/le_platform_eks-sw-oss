@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 	xcardv1 "x100-operator/api/v1"
 )
 
@@ -118,27 +117,24 @@ func (c *ControllerState) createResources() (int, xcardv1.State, error) {
 }
 
 func (c *ControllerState) getx100bootupStatus() (xcardv1.State, error) {
-	result := make(chan xcardv1.State, 1)
-	go func() {
-		result <- c.labelx100bootupStatusforNodes()
-	}()
-	select {
-	case <-time.After(300 * time.Second):
-		//Label the timeout and appropriate status for nodes
-		log.Log.Info("ERROR: labelx100bootupStatusforNodes Timed Out")
-		c.markHealthCheckedforCurrentCR()
-		log.Log.Info("ERROR:", "Reading Health Status from Nodes timed out- CR: ", c.x100Policy.ObjectMeta.Name)
-		return xcardv1.Operational, nil
-	case result := <-result:
-		log.Log.Info(fmt.Sprintf("getx100bootupStatus returned %s", result))
-		c.markHealthCheckedforCurrentCR()
-		return result, nil
-	}
+	/***
+		Process only eligible nodes in labelx100bootupStatusforNodes
+		Same goes for markHealthCheckedforCurrentCR and endState
+	***/
+	result := c.labelx100bootupStatusforNodes()
+	c.markHealthCheckedforCurrentCR()
+	return result, nil
 }
 
 func (c *ControllerState) endState() (xcardv1.State, error) {
-	// Terminate, cleanup
-
+	// Terminate
+	/***
+		Make an additional check to ensure that all nodes
+		under current policy have actually been marked with boot status
+		if not return NotOperational
+		else Operational
+	***/
+	result := xcardv1.Operational
 	opts := []client.ListOption{&client.MatchingLabels{x100ActiveCR: c.x100Policy.ObjectMeta.Name}}
 
 	log.Log.Info("DEBUG: endState()", "LabelSelector", fmt.Sprintf("%s=%s",
@@ -151,39 +147,16 @@ func (c *ControllerState) endState() (xcardv1.State, error) {
 	}
 
 	for _, node := range list.Items {
-		labels := node.GetLabels()
-		nodeHasRolledBackLabel := hasX100RolledBackLabel(labels)
-		nodeHasEnablingFirstPolicyLabel := hasX100EnablingFirstPolicy(labels)
-		hasX100RebootedLabel := hasX100ComingUpAfterRebootLabel(labels)
-
-		if nodeHasRolledBackLabel {
-			delete(labels, x100RolledBack)
+		labels := c.getNodeLabels(node)
+		if !hasX100BootupStatusMarkedLabel(labels) {
+			// Atleast one node still doesn't have boot status marked
+			result = xcardv1.NotOperational
+			continue
 		}
-		if nodeHasEnablingFirstPolicyLabel {
-			delete(labels, x100EnablingFirstPolicy)
-		}
-		if hasX100RebootedLabel {
-			delete(labels, X100ComingUpAfterReboot)
-		}
-
-		/***
-		node.SetLabels(labels)
-		err = c.rec.Update(context.TODO(), &node)
-		if err != nil {
-			return xcardv1.NotOperational, fmt.Errorf("Unable to delete label node %s with %s, err %s",
-				node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
-		}
-		***/
-		err = c.setX100NodeLabels(&node, labels, x100EnablingFirstPolicy, LabelUpdateDeletionType)
-		if err != nil {
-			return xcardv1.NotOperational, fmt.Errorf("Unable to delete label node %s with %s, err %s",
-				node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
-		}
-
 		log.Log.Info(fmt.Sprintf("Reached endstate for node %s", node.ObjectMeta.Name))
 	}
 
-	return xcardv1.Operational, nil
+	return result, nil
 }
 
 func (c *ControllerState) triggerStateMachine(reconciler *X100ManagementPolicyReconciler, policy *xcardv1.X100ManagementPolicy) (xcardv1.State, error) {

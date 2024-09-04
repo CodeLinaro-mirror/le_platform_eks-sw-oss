@@ -30,14 +30,118 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 )
+
+func (c *ControllerState) labelX100NodesIsolated(policy *xcardv1.X100ManagementPolicy) error {
+	// fetch all nodes in the cluster
+	log.Log.Info("Entering labelX100NodesIsolated()")
+
+	opts := []client.ListOption{}
+	list := &corev1.NodeList{}
+
+	err := c.rec.List(context.TODO(), list, opts...)
+	if err != nil {
+		return fmt.Errorf("Unable to list nodes to check annotations, err %s", err.Error())
+	}
+
+	for _, node := range list.Items {
+		labels := c.getNodeLabels(node)
+
+		if isX100RunningWithPolicy(labels, policy.GetName()) {
+			// Don't process the nodes that don't have x100 cards
+			if !hasCustomX100Label(labels) {
+				continue
+			}
+			nodeIsolated := c.testAndSetX100NodeAsIsolated(&node)
+			if nodeIsolated {
+				log.Log.Info(fmt.Sprintf("Isolated node %s from further processing, needs manual intervention",
+					node.GetName()))
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
+	// Check nodes for isolation
+	err := c.labelX100NodesIsolated(policy)
+	if err != nil {
+		return err
+	}
+
+	// fetch all nodes in the cluster
+	log.Log.Info("Entering labelX100Nodes()")
+	opts := []client.ListOption{}
+	list := &corev1.NodeList{}
+	err = c.rec.List(context.TODO(), list, opts...)
+	if err != nil {
+		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+	}
+
+	for _, node := range list.Items {
+		// get node labels
+		labels := c.getNodeLabels(node)
+		hasCustomLabel := hasCustomX100Label(labels)
+		hasPCILabel := hasX100PCILabels(labels)
+		hasIsolateLabel := hasX100IsolateLabel(labels)
+		isNodeSchedulable := !c.isNodeUnschedulable(&node)
+		hasBootStatusMarked := hasX100BootupStatusMarkedLabel(labels)
+
+		if !hasCustomLabel && hasPCILabel && isNodeSchedulable {
+			// Check for Isolate Label before applying Custom Label
+			if hasIsolateLabel {
+				labels[x100LabelKey] = "false"
+			} else {
+				labels[x100LabelKey] = x100LabelValue
+			}
+			err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
+			if err != nil {
+				return fmt.Errorf("Unable to label node %s with %s, err %s",
+					node.ObjectMeta.Name, x100LabelKey, err.Error())
+			}
+			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
+
+		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
+			// previously labelled node and no longer has X100
+			// reset the custom label as it is not valid
+			if hasIsolateLabel {
+				log.Log.Info(fmt.Sprintf("Node %s has been isolated, removed from further processing.",
+					node.ObjectMeta.Name))
+			}
+			labels[x100LabelKey] = "false"
+			node.SetLabels(labels)
+			err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
+			if err != nil {
+				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+			}
+			log.Log.Info(fmt.Sprintf("Stale Label %s set to false", x100LabelKey))
+		} else {
+			log.Log.Info(fmt.Sprintf("X100 Labelling conditions => hasCustomLabel=%v,hasPCILabel=%v,hasIsolateLabel=%v,isNodeSchedulable=%v",
+				hasCustomLabel, hasPCILabel, hasIsolateLabel, isNodeSchedulable))
+		}
+
+		labels = c.getNodeLabels(node)
+		if isX100RunningWithPolicy(labels, policy.GetName()) {
+			annotations := node.GetAnnotations()
+			// x100 card is present and processing time annotation is not present
+			if hasCustomLabel && !hasIsolateLabel && !hasBootStatusMarked && !hasNodeProcessingStartTimeAnnotation(annotations) {
+				_, err := c.attachX100Annotation(&node, nodeProcessingStartTime)
+				if err != nil {
+					return err
+				}
+				log.Log.Info(fmt.Sprintf("Attached nodeProcessingStartTime annotation to the node %s during labelX100Nodes()",
+					node.GetName()))
+			}
+		}
+	}
+	return nil
+}
 
 func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
 	/***
 		If policy node list is empty
 			apply only on nodes that have no activeCR or are new
-			Push processing to below loop and handle in else part
 
 		If there are nodes that are not part of policy selectorlist
 		But are having the activeCR as current policy
@@ -56,38 +160,17 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						Remove the labels from the node to initiate termination
 						Save the labels for priorCR
 						Wait for pod termination
-						Reapply appropraite labels to track new CR
+						Reapply appropriate labels to track new CR
 				else
 					Must be first time boot up or first time policy application
 					fill the labels priorCR, activeCR, SwVersion
 					priorCR should be kept empty
 
-		For deletion, we may have to put a condition based on whether priorCR is empty
-		After deletion of policy, all labels will be deleted, we could retain priorCr if nonEmpty
-		We hit reconciler due to this label change again, but policy instance may be different now
-		So how do we ensure that we need to apply priorCR now
-		Put an if condition to check if priorCR exists and has value but activeCR is none
-		This could indicate coming from deletion fallback path
-		Now apply appropriate labels and create new resources
-		Fetch policy instance based on the name if needed, and get sw version from it
-		We may need to retain sw version as well to avoid the policy pull
-
 		Note : Sequence for creation of resources is maintained through the
 		labels created by the dependency and the dependent checks for this
 		through a label. Create label on pod ready condition.
-		Make sure to modify the podReady calls as well to streamline with This
-		new implementation.
-		For fwpod, ensure that a file is created by the script.
-		Operator checks for this file before flagging fwPodReady condition
-		runCommandOnPod() can be used to read the file
 
-		Existing node selectors
-
-		  nodeSelector:
-			qualcomm.com/x100.present: "true"
-			qualcomm.com/x100.swvdefault: "true"
-			qualcomm.com/x100.swversion: default
-		New node selectors
+		Node selectors
 		    qualcomm.com/x100.present: "true"
 			qualcomm.com/x100.swversion: "v1"
 			qualcomm.com/x100.fw.present: "true"
@@ -98,6 +181,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 	***/
 	log.Log.Info("Entering labelX100NodeswithCR()")
 	nodeInCRSelectorList := policySpec.NodeSelector
+	hasNodeQualifiedForResourceCreationStage := false
+
 	log.Log.Info("labelX100NodeswithCR() ", "Nodes list length from CRD ", len(nodeInCRSelectorList))
 
 	if len(nodeInCRSelectorList) == 0 {
@@ -119,7 +204,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 				return err
 			}
 
-			labels := node.GetLabels()
+			labels := c.getNodeLabels(node)
 			hasx100Attached := hasCustomX100Label(labels)
 			nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
 			nodehasOwnerPolicyDeletedLabel := hasX100OwnerPolicyDeletedLabel(labels)
@@ -142,7 +227,6 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 
 	// Aggregate nodelist for current policy
 	// Irrespective of node selector list being empty
-	// nodesToBeIncludedInPolicy := &corev1.NodeList{}
 	nodesToBeIncludedInPolicy := false
 
 	opts := []client.ListOption{&client.MatchingLabels{x100ActiveCR: policy.ObjectMeta.Name}}
@@ -158,7 +242,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 
 	for _, node := range list.Items {
 		includeNode := true
-		labels := node.GetLabels()
+		labels := c.getNodeLabels(node)
 		for _, ns := range nodeInCRSelectorList {
 			// Nodes that are not part of selector list
 			if node.ObjectMeta.Name == ns {
@@ -192,7 +276,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 	}
 
 	// Beyond this point, every policy has a node list associated with it
-	// We can process all nodes now to apply appropriate policy/software version labels
+	// We can process all nodes now to applying appropriate policy/software version labels
 
 	opts = []client.ListOption{}
 	list = &corev1.NodeList{}
@@ -206,26 +290,33 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 		nodeSelectorList of current policy as we don't expect reconciler to be triggered
 		on any label changes except the nfd labels going off resulting on x100 label going
 		off. Requests for all policies are generated though which means we need to handle
-		all nodeSelectorList across nodes.
+		all nodeSelectorList across policies.
 		For any policy change though, we would have the correct policy instance.
 	***/
-	nodeInCRSelectorList = policySpec.NodeSelector
-	log.Log.Info("Refetching ", "Nodes list length from CRD ", len(nodeInCRSelectorList))
+	updatedPolicy := &xcardv1.X100ManagementPolicy{}
+	err = c.rec.Get(context.TODO(), types.NamespacedName{Name: policy.GetName()}, updatedPolicy)
+	if err != nil {
+		return err
+	}
+	log.Log.Info(fmt.Sprintf("Fetched updated %s after node aggregation", policy.GetName()))
+	policy = updatedPolicy
+	nodeInCRSelectorList = policy.Spec.NodeSelector
 
-	nodeNeedsRollback := false
+	log.Log.Info("After aggregation", "Nodes list length from CRD ", len(nodeInCRSelectorList))
+
 	for _, ns := range nodeInCRSelectorList {
-		//nodeHasNoX100Card := false
 		for _, node := range list.Items {
 			// Process only nodes that are in the policy nodeSelectorList
 			if node.ObjectMeta.Name == ns {
-				log.Log.Info(fmt.Sprintf("Found node object for node %s in selector list", node.ObjectMeta.Name))
+				log.Log.Info(fmt.Sprintf("Found node object for node %s from selector list", node.ObjectMeta.Name))
 				// get node labels
-				labels := node.GetLabels()
+				labels := c.getNodeLabels(node)
 				hasx100Attached := hasCustomX100Label(labels)
 				nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
 				nodeEnablingPodSelectors := hasX100EnablingFirstPolicy(labels)
 				nodeHasRebooted := hasX100ComingUpAfterRebootLabel(labels)
-
+				log.Log.Info(fmt.Sprintf("Node %s has x100Attached=%v, noActiveCR=%v, enablingPodSelectors=%v, comingFromReboot=%v",
+					node.GetName(), hasx100Attached, nodehasNoActiveCRLabel, nodeEnablingPodSelectors, nodeHasRebooted))
 				if hasx100Attached {
 					// Processing worker nodes that have x100 card attached to them
 					if nodehasNoActiveCRLabel {
@@ -234,8 +325,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						labels[x100ActiveCR] = policy.ObjectMeta.Name
 						labels[x100SwVersion] = policySpec.SwVersion
 						labels[x100PriorCR] = "" // No priorCR
-						nodehasOwnerPolicyDeletedLabel := hasX100OwnerPolicyDeletedLabel(labels)
-						if nodehasOwnerPolicyDeletedLabel {
+
+						if hasX100OwnerPolicyDeletedLabel(labels) {
 							delete(labels, x100OwnerPolicyDeleted)
 						}
 						// Acts as a flag to identify that we need to reenter this loop
@@ -245,52 +336,41 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 						// Enable individual pod selector labels to control deletion sequence
 						err = c.enablePodSelectorLabels(&node)
 						if err != nil {
-							return err
+							// If we are unable to set labels in next step and reenter
+							// enablePodSelectorLabels() will return error for index 1
+							// as it already processed index 0 and now looks for fw pod
+							// If DS is not created yet, we need to move ahead
+							if c.isFirmwareDSCreated() {
+								break
+							} else {
+								hasNodeQualifiedForResourceCreationStage = true
+							}
 						}
-						// Fetch updated node Instance
+
 						log.Log.Info(fmt.Sprintf("Labelling node %s with activeCR label", node.ObjectMeta.Name))
 						node.SetLabels(labels)
-						//err = c.rec.Update(context.TODO(), &node)
 						err = c.setX100NodeLabels(&node, labels, x100ActiveCR, LabelUpdateAdditionType)
 						if err != nil {
-							return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name, x100ActiveCR, err.Error())
+							return fmt.Errorf("Unable to label node %s with %s, err %s",
+								node.ObjectMeta.Name, x100ActiveCR, err.Error())
 						}
+						hasNodeQualifiedForResourceCreationStage = true
 					} else if nodeEnablingPodSelectors {
 						// Enable individual pod selector labels to control creation sequence
 						log.Log.Info(fmt.Sprintf("Enabling Pod selector labels for node %s under policy %s",
 							node.ObjectMeta.Name, policy.ObjectMeta.Name))
 						err = c.enablePodSelectorLabels(&node)
 						if err != nil {
-							// allow the process to move ahead with daemonset creation
-							// instead of returning an error which could result in
-							// useless looping and no progress
-							return nil
+							break
 						}
-						/***
-						log.Log.Info("Marking Pod selector enablement as complete...")
-						// Remove the label
-						rnode := &corev1.Node{}
-						err, rnode = c.fetchUpdatedNodeInstance(&node)
-						if err != nil {
-							return err
-						}
-						labels = rnode.GetLabels()
-						delete(labels, x100EnablingFirstPolicy)
-
-						node.SetLabels(labels)
-						err = c.rec.Update(context.TODO(), &node)
-						if err != nil {
-							return fmt.Errorf("Unable to delete label node %s with %s, err %s",
-												node.ObjectMeta.Name, x100EnablingFirstPolicy, err.Error())
-						}
-						***/
+						hasNodeQualifiedForResourceCreationStage = true
 					} else if nodeHasRebooted {
 						log.Log.Info(fmt.Sprintf("[Reboot] Terminating pods for node %s on reboot", node.ObjectMeta.Name))
 
 						if !hasX100TeardownCompletedLabel(labels) {
 							err = c.teardownX100ManagementPolicyOwnedPodsOnNode(&node)
 							if err != nil {
-								return err
+								break
 							}
 
 							err, rnode := c.fetchUpdatedNodeInstance(&node)
@@ -298,17 +378,18 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 								return err
 							}
 							node = *rnode
-							labels = node.GetLabels()
+							labels = c.getNodeLabels(node)
 
 							log.Log.Info(fmt.Sprintf("[Reboot] Termination completed, setting %s to true", x100TeardownCompleted))
 							// Mark teardown sequence completion
 							labels[x100TeardownCompleted] = "true"
 
 							node.SetLabels(labels)
+
 							err = c.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
 							if err != nil {
-								return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
-									x100TeardownCompleted, err.Error())
+								log.Log.Info("Unable to label node %s with %s", node.ObjectMeta.Name, x100TeardownCompleted)
+								break
 							}
 						}
 
@@ -316,9 +397,10 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 							node.ObjectMeta.Name, policy.ObjectMeta.Name))
 						err = c.enablePodSelectorLabels(&node)
 						if err != nil {
-							return err
+							break
 						}
 						log.Log.Info(fmt.Sprintf("[Reboot] Enabled pod selector labels for node %s after reboot", node.ObjectMeta.Name))
+						hasNodeQualifiedForResourceCreationStage = true
 					} else {
 						/***
 							Handle policy deletion triggers here
@@ -342,9 +424,8 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 							// handle only during rollback handler
 							cardState, _ := c.rollbackHandler(policy, &node)
 							if cardState == xcardv1.NotOperational {
-								nodeNeedsRollback = true
+								break
 							}
-							break
 						}
 						policyopts := []client.ListOption{}
 						policylist := &xcardv1.X100ManagementPolicyList{}
@@ -357,7 +438,7 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 							activeCR, err := getActiveCRonNode(labels)
 							if err != nil {
 								log.Log.Info(fmt.Sprintf("Active CR not found on node %s", node.ObjectMeta.Name))
-								return err
+								break
 							}
 							if cr.ObjectMeta.GetName() == activeCR && policy.ObjectMeta.Name != cr.ObjectMeta.GetName() {
 								//Fetch relevant policy for node and see if its not current policy
@@ -375,21 +456,22 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 									cr.Spec.NodeSelector = append(cr.Spec.NodeSelector[:index], cr.Spec.NodeSelector[index+1:]...)
 									c.rec.Update(context.TODO(), &cr)
 									if err != nil {
-										return fmt.Errorf("Unable to remove node %s from exisiting policy : %s. err %s",
-											cr.ObjectMeta.GetName(), node.ObjectMeta.Name, err.Error())
+										log.Log.Info(fmt.Sprintf("Unable to remove node %s from exisiting policy : %s",
+											cr.ObjectMeta.GetName(), node.ObjectMeta.Name))
+										break
 									}
 									log.Log.Info(fmt.Sprintf("Removed node %s from %s",
 										node.ObjectMeta.Name, cr.ObjectMeta.Name))
 
-									//Fetch updated node instance and label aggregation as blocked on this node
-									// Todo What if the label attachment fails, how to fallback
-									labels[x100NodeAggregationBlocked] = "true"
+									//Mark label aggregation as blocked on this node
+									//Store the correct policy name as value
+									labels[x100NodeAggregationBlocked] = policy.GetName()
 									node.SetLabels(labels)
 									err = c.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateAdditionType)
-									//err = c.rec.Update(context.TODO(), &node)
 									if err != nil {
-										return fmt.Errorf("Unable to add label %s to node %s, err %s",
-											x100NodeAggregationBlocked, node.ObjectMeta.Name, err.Error())
+										log.Log.Info(fmt.Sprintf("Unable to add label %s to node %s",
+											x100NodeAggregationBlocked, node.ObjectMeta.Name))
+										break
 									}
 								} else {
 									log.Log.Info(fmt.Sprintf("Node %s will be excluded from aggregation while activeCR doesn't change",
@@ -398,16 +480,18 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 								log.Log.Info(fmt.Sprintf("Running upgrade sequence for node %s", node.GetName()))
 								err = c.runUpgradeSequenceForNode(&node)
 								if err != nil {
-									return err
+									break
 								}
+								hasNodeQualifiedForResourceCreationStage = true
 							} else {
 								// Check for upgrading labels here
 								hasUpgradingLabel := hasX100UpgradingLabel(labels)
 								if hasUpgradingLabel {
 									err = c.runUpgradeSequenceForNode(&node)
 									if err != nil {
-										return err
+										break
 									}
+									hasNodeQualifiedForResourceCreationStage = true
 								}
 								hasRolledBackLabel := hasX100RolledBackLabel(labels)
 								if hasRolledBackLabel {
@@ -439,76 +523,31 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 									// Enable pod selector labels
 									err = c.enablePodSelectorLabels(rnode)
 									if err != nil {
-										return err
+										break
 									}
+									hasNodeQualifiedForResourceCreationStage = true
 								}
 							}
 						}
+						hasNodeQualifiedForResourceCreationStage = true
 					}
 				} else {
 					// Node doesn't have x100 card attached to it
-					// Break from here and then the outer loop since no card
-					// nodeHasNoX100Card = true
+					// Break from here since no card
 					break
 				}
 			}
 		}
 	}
-	if nodeNeedsRollback {
-		return errors.New(fmt.Sprintf("Node needs a rollback, flagging policy %s as NotOperational", policy.ObjectMeta.Name))
-	}
-	return nil
-}
 
-func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
-
-	// fetch all nodes in the cluster
-	log.Log.Info("Entering labelX100Nodes() ")
-	opts := []client.ListOption{}
-	list := &corev1.NodeList{}
-	err := n.rec.List(context.TODO(), list, opts...)
-	if err != nil {
-		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+	if len(nodeInCRSelectorList) <= 1 {
+		// allow the empty policies or single node policies to move ahead to completion
+		hasNodeQualifiedForResourceCreationStage = true
 	}
 
-	for _, node := range list.Items {
-		// get node labels
-		labels := node.GetLabels()
-		hasCustomLabel := hasCustomX100Label(labels)
-		hasPCILabel := hasX100PCILabels(labels)
-		hasIsolateLabel := hasX100IsolateLabel(labels)
-		isNodeSchedulable := !n.isNodeUnschedulable(&node)
-
-		if !hasCustomLabel && hasPCILabel && isNodeSchedulable {
-			// Check for Isolate Label before applying Custom Label
-			if hasIsolateLabel {
-				labels[x100LabelKey] = "false"
-			} else {
-				labels[x100LabelKey] = x100LabelValue
-			}
-
-			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
-			if err != nil {
-				return fmt.Errorf("Unable to label node %s with %s, err %s",
-					node.ObjectMeta.Name, x100LabelKey, err.Error())
-			}
-			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
-
-		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
-			// previously labelled node and no longer has X100s'
-			// reset the custom label as it is not valid
-			if hasIsolateLabel {
-				log.Log.Info(fmt.Sprintf("Node %s has been isolated, removed from further processing.",
-					node.ObjectMeta.Name))
-			}
-			labels[x100LabelKey] = "false"
-			node.SetLabels(labels)
-			err = n.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
-			if err != nil {
-				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
-			}
-			log.Log.Info(fmt.Sprintf("Stale Label %s set to false", x100LabelKey))
-		}
+	if !hasNodeQualifiedForResourceCreationStage {
+		return errors.New(fmt.Sprintf("Policy has no node that can proceed to create resources, flagging policy %s as NotOperational",
+			policy.ObjectMeta.Name))
 	}
 	return nil
 }
@@ -516,104 +555,87 @@ func (n *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 func (c *ControllerState) labelx100bootupStatusforNodes() xcardv1.State {
 
 	nodesCount := 0
-	for {
-		opts := []client.ListOption{}
-		nodes_list := &corev1.NodeList{}
-		err := c.rec.List(context.TODO(), nodes_list, opts...)
-		if err != nil {
-			if kerrors.IsNotFound(err) {
-				log.Log.Info("labelx100bootupStatusforNodes: Reached getx100bootupStatus but unable to list any nodes", "Error : ", err.Error())
-				return xcardv1.NotOperational
-			}
+	opts := []client.ListOption{}
+	nodes_list := &corev1.NodeList{}
+	err := c.rec.List(context.TODO(), nodes_list, opts...)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			log.Log.Info("labelx100bootupStatusforNodes: Reached getx100bootupStatus but unable to list any nodes", "Error : ", err.Error())
+			return xcardv1.NotOperational
 		}
-		nodesCount = len(nodes_list.Items)
-		log.Log.Info("labelx100bootupStatusforNodes:", "NodesCount", nodesCount)
-		for _, node := range nodes_list.Items {
-			labels := node.GetLabels()
-			if !isX100RunningWithPolicy(labels, c.x100Policy.ObjectMeta.Name) {
-				nodesCount--
-				log.Log.Info("labelx100bootupStatusforNodes:", "not running with current CR: Removing Node ", node.GetName())
+	}
+	nodesCount = len(nodes_list.Items)
+	log.Log.Info("labelx100bootupStatusforNodes:", "NodesCount", nodesCount)
+	for _, node := range nodes_list.Items {
+		labels := c.getNodeLabels(node)
+		annotations := node.GetAnnotations()
+
+		if isEligible, decrement := c.isX100NodeEligibleForBootStatusCheck(&node); !isEligible {
+			nodesCount = nodesCount - decrement
+			continue
+		}
+
+		if !hasX100HealthCheckStartTimeAnnotation(annotations) {
+			tnode, err := c.attachX100Annotation(&node, x100HealthCheckStartTime)
+			if err != nil {
 				continue
-			} else {
-				// Nodes under current policy
-				if hasX100BootupSuccessLabel(labels) {
-					nodesCount--
-					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100BootupSuccess label: Removing Node ", node.GetName())
-					continue
-				} else if !hasCustomX100Label(labels) {
-					nodesCount--
-					log.Log.Info("labelx100bootupStatusforNodes:", " doesn't hasCustomX100Label label: Removing Node ", node.GetName())
-					continue
-				} else if hasX100UpgradeFailedLabel(labels) {
-					nodesCount--
-					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100UpgradeFailed label: Removing Node ", node.GetName())
-					continue
-				} else if hasX100BootupStatusMarkedLabel(labels) {
-					nodesCount--
-					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100BootupStatusMarked label: Removing Node ", node.GetName())
-					continue
-				} else if hasX100ComingUpAfterRebootLabel(labels) && !hasX100TeardownCompletedLabel(labels) {
-					log.Log.Info("labelx100bootupStatusforNodes:", " hasX100ComingUpAfterRebootLabel label but termination pending: Removing Node ",
-						node.GetName())
-					// Very small time window where older resources exist after reboot
-					// Avoid adding any status labels at the moment
-					// We requeue for entire policy
-					return xcardv1.NotOperational
-				}
 			}
+			node = *tnode
+			log.Log.Info(fmt.Sprintf("Attached x100HealthCheckStartTime annotation to the node %s while entering labelx100bootupStatusforNodes()",
+				node.GetName()))
+		}
 
-			x100count, _ := c.getX100CardCountOnNode(&node)
-			if x100count > 0 {
-				labels = node.GetLabels()
-				labels[x100CountOnNode] = strconv.Itoa(x100count)
-				log.Log.Info("labelx100bootupStatusforNodes: X100 Count on Node",
-					node.GetName(), x100count)
+		x100count, _ := c.getX100CardCountOnNode(&node)
+		if x100count > 0 {
+			labels = c.getNodeLabels(node)
+			labels[x100CountOnNode] = strconv.Itoa(x100count)
+			log.Log.Info("labelx100bootupStatusforNodes: X100 Count on Node",
+				node.GetName(), x100count)
 
-				successBootCount, failedBootCount, err := c.getX100BootupStatusOnNode(&node, x100count)
-				labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
-				if err != nil {
-					log.Log.Info("labelx100bootupStatusforNodes: Unable to get X100 Bootup status for node",
-						node.ObjectMeta.Name, err.Error())
+			successBootCount, failedBootCount, err := c.getX100BootupStatusOnNode(&node, x100count)
+			labels[x100BootupSuccessCount] = strconv.Itoa(successBootCount)
+			if err != nil {
+				log.Log.Info("labelx100bootupStatusforNodes: Unable to get X100 Bootup status for node",
+					node.ObjectMeta.Name, err.Error())
+				labels[x100BootupSuccess] = "unknown"
+			} else {
+				log.Log.Info("labelx100bootupStatusforNodes: Bootup success count for node",
+					node.ObjectMeta.Name, successBootCount,
+					", Failed bootup:", failedBootCount)
+				if successBootCount+failedBootCount != x100count {
 					labels[x100BootupSuccess] = "unknown"
+					log.Log.Info(fmt.Sprintf("Boot status not available for all cards on node %s",
+						node.GetName()))
 				} else {
-					log.Log.Info("labelx100bootupStatusforNodes: Bootup success count for node",
-						node.ObjectMeta.Name, successBootCount,
-						", Failed bootup:", failedBootCount)
-					if successBootCount+failedBootCount != x100count {
-						labels[x100BootupSuccess] = "unknown"
-						log.Log.Info(fmt.Sprintf("Boot status not available for all cards on node %s",
-							node.GetName()))
+					nodesCount--
+					if successBootCount == x100count {
+						labels[x100BootupSuccess] = "true"
+						log.Log.Info(fmt.Sprintf("All cards booted successfully on node %s", node.GetName()))
 					} else {
-						nodesCount--
-						if successBootCount == x100count {
-							labels[x100BootupSuccess] = "true"
-							log.Log.Info(fmt.Sprintf("All cards booted successfully on node %s", node.GetName()))
-						} else {
-							if failedBootCount > 0 {
-								labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
-								log.Log.Info(fmt.Sprintf("%v cards failed to boot successfully on node %s",
-									labels[x100BootupFailedCount], node.GetName()))
-							}
-							labels[x100BootupSuccess] = "false"
+						if failedBootCount > 0 {
+							labels[x100BootupFailedCount] = strconv.Itoa(failedBootCount)
+							log.Log.Info(fmt.Sprintf("%v cards failed to boot successfully on node %s",
+								labels[x100BootupFailedCount], node.GetName()))
 						}
+						labels[x100BootupSuccess] = "false"
 					}
 				}
+			}
 
-				node.SetLabels(labels)
-				err = c.setX100NodeLabels(&node, labels, x100BootupSuccess, LabelUpdateAdditionType)
-				//err = c.rec.Update(context.TODO(), &node)
-				if err != nil {
-					log.Log.Info("labelx100bootupStatusforNodes: Unable to label node", node.ObjectMeta.Name, " with ", x100BootupSuccess, err.Error())
-				} else {
-					log.Log.Info("labelx100bootupStatusforNodes: X100 Bootup success Count on Node", node.ObjectMeta.Name, successBootCount)
-				}
+			node.SetLabels(labels)
+			err = c.setX100NodeLabels(&node, labels, x100BootupSuccess, LabelUpdateAdditionType)
+			//err = c.rec.Update(context.TODO(), &node)
+			if err != nil {
+				log.Log.Info("labelx100bootupStatusforNodes: Unable to label node", node.ObjectMeta.Name, " with ", x100BootupSuccess, err.Error())
+			} else {
+				log.Log.Info("labelx100bootupStatusforNodes: X100 Bootup success Count on Node", node.ObjectMeta.Name, successBootCount)
 			}
 		}
-		if nodesCount <= 0 {
-			log.Log.Info("labelx100bootupStatusforNodes: Returning")
-			return xcardv1.Operational
-		}
-		log.Log.Info("labelx100bootupStatusforNodes: Sleeping 10 before retrying to get BootStatus of nodes")
-		time.Sleep(time.Second * 10)
 	}
+	if nodesCount <= 0 {
+		log.Log.Info("labelx100bootupStatusforNodes: All policy nodes processed successfully")
+		return xcardv1.Operational
+	}
+	log.Log.Info("labelx100bootupStatusforNodes: Unable to get bootStatus of all nodes at the moment")
+	return xcardv1.NotOperational
 }

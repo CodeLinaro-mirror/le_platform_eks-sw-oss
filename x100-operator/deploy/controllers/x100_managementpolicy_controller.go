@@ -56,23 +56,27 @@ type X100ManagementPolicyReconciler struct {
 
 func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance *xcardv1.X100ManagementPolicy) error {
 	/***
-		Deletion supports only deletion of policy and no upgrade/downgrade.
-		All nodes under the policy would have the policy owned resources
-		deleted from respective nodes.An additional label (x100OwnerPolicyDeleted)
-		is attached	to affected nodes so that new policy is not attached to them
-		unless user explicitly expresses the intent to do so by putting the node
-		in the selector list of some other policy.
-
+		for nodes under currently deleted Policy
+			delete all labels,
+			if isolate exists, retain x100.present
+			Retain ownerPolicyDeleted label on all such nodes
 	***/
+
 	policyopts := []client.ListOption{}
 	policylist := &xcardv1.X100ManagementPolicyList{}
 	err := r.List(context.TODO(), policylist, policyopts...)
 	if err != nil {
-		log.Log.Error(err, "clearLabelsOnCrDeletion()- Unable to list X100ManagementPolicy CRs")
+		log.Log.Error(err, "Policy Deletion - Unable to list X100ManagementPolicy CRs")
 	}
 
 	log.Log.Info(fmt.Sprintf("Deleting policy %s, found %v x100managementpolicies in the cluster",
 		policyInstance.ObjectMeta.Name, len(policylist.Items)))
+
+	if len(policylist.Items) == 0 {
+		//PolicyList is empty
+		log.Log.Info("Cluster doesn't have any X100 management policies, exiting...")
+		return nil
+	}
 
 	opts := []client.ListOption{}
 	list := &corev1.NodeList{}
@@ -80,36 +84,65 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 	if err != nil {
 		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
 	}
+
+	isLastPolicy := false
+	if len(policylist.Items) == 1 {
+		isLastPolicy = true
+	}
+
 	for _, node := range list.Items {
 		labels := node.GetLabels()
 		if isX100RunningWithPolicy(labels, policyInstance.ObjectMeta.Name) {
-			log.Log.Info("Deleting policy which is running on current node")
+			log.Log.Info(fmt.Sprintf("Processing node %s under currently deleted policy %s",
+				node.GetName(), policyInstance.GetName()))
+			// Clean labels
 			labels = cleanupStaleCRLabels(labels)
 			labels = cleanupStaleSelectorLabels(labels)
-			if len(policylist.Items) > 1 {
-				labels[x100OwnerPolicyDeleted] = "true"
+			labels[x100OwnerPolicyDeleted] = "true"
+			if hasX100IsolateLabel(labels) {
+				labels[x100LabelKey] = "false"
+			} else {
+				labels[x100LabelKey] = x100LabelValue
 			}
+
 			node.SetLabels(labels)
-			err = x100Ctrl.setX100NodeLabels(&node, labels, x100SwVersion, LabelUpdateDeletionType)
-			//err = r.Update(context.TODO(), &node)
+			err = x100Ctrl.setX100NodeLabels(&node, labels, x100OwnerPolicyDeleted, LabelUpdateAdditionType)
 			if err != nil {
-				return fmt.Errorf("Unable to delete node label for %s , err %s", node.ObjectMeta.Name, err.Error())
+				return fmt.Errorf("Unable to add node label %s for %s during policy deletion, err %s",
+					x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error())
 			}
-		} else {
-			// If the only policy available is being deleted
-			if len(policylist.Items) == 1 {
-				log.Log.Info("Deleting last X100ManagementPolicy in the cluster")
-				if hasX100OwnerPolicyDeletedLabel(labels) {
-					delete(labels, x100OwnerPolicyDeleted)
-				}
-				if hasCustomX100Label(labels) {
+
+			// Clean annotations
+			annotations := node.GetAnnotations()
+			annotations = cleanupStaleAnnotations(annotations)
+			node.SetAnnotations(annotations)
+
+			err = x100Ctrl.setX100NodeAnnotations(&node, labels, nodeProcessingStartTime, LabelUpdateDeletionType)
+			if err != nil {
+				return fmt.Errorf("Unable to delete node annotation for %s , err %s",
+					node.ObjectMeta.Name, err.Error())
+			}
+		}
+
+		if isLastPolicy {
+			// Fetch updated Labels
+			err, rnode := x100Ctrl.fetchUpdatedNodeInstance(&node)
+			if err != nil {
+				return err
+			}
+			node = *rnode
+			labels = node.GetLabels()
+
+			if _, ok := labels[x100LabelKey]; ok {
+				delete(labels, x100OwnerPolicyDeleted)
+				if !hasX100IsolateLabel(labels) {
 					delete(labels, x100LabelKey)
 				}
 				node.SetLabels(labels)
-				//err = r.Update(context.TODO(), &node)
-				err = x100Ctrl.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateDeletionType)
+				err = x100Ctrl.setX100NodeLabels(&node, labels, x100OwnerPolicyDeleted, LabelUpdateDeletionType)
 				if err != nil {
-					return fmt.Errorf("Unable to delete node label for %s , err %s", node.ObjectMeta.Name, err.Error())
+					return fmt.Errorf("Unable to remove node label %s from %s during last policy deletion, err %s",
+						x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error())
 				}
 			}
 		}
@@ -140,6 +173,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 	// Maintains the overall state of the CR to be Operational or NotOperational
 
 	logger := log.Log.WithValues("Reconciling: ", req.NamespacedName)
+	x100Ctrl.rec = r
 
 	// Fetch the CRD instance
 	policyInstance := &xcardv1.X100ManagementPolicy{}
@@ -176,6 +210,14 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried
 				return ctrl.Result{}, err
+			}
+
+			err = r.Get(ctx, req.NamespacedName, policyInstance)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					return reconcile.Result{}, nil
+				}
+				return reconcile.Result{}, err
 			}
 
 			// remove our finalizer from the list and update it.
@@ -217,13 +259,26 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							labels = cleanupLabelsOnReboot(labels)
 							// Label to indicate that we were in reboot path
 							labels[X100ComingUpAfterReboot] = "true"
+
 							node.SetLabels(labels)
-							//err = r.Update(context.TODO(), &node)
 							err = x100Ctrl.setX100NodeLabels(&node, labels, X100ComingUpAfterReboot, LabelUpdateAdditionType)
 							if err != nil {
 								log.Log.Info(fmt.Sprintf("Unable to reset node labels for %s in reboot path, err %s",
 									node.ObjectMeta.Name, err.Error()))
 								return reconcile.Result{}, err
+							}
+						} else {
+							// Reboot with in a Reboot, force deletion of existing resources
+							log.Log.Info(fmt.Sprintf("Node %s has rebooted while recovering from earlier reboot",
+								node.GetName()))
+							if hasX100TeardownCompletedLabel(labels) {
+								delete(labels, x100TeardownCompleted)
+								err = x100Ctrl.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateDeletionType)
+								if err != nil {
+									log.Log.Info(fmt.Sprintf("Unable to reset node labels for %s in reboot path, err %s",
+										node.ObjectMeta.Name, err.Error()))
+									return reconcile.Result{}, err
+								}
 							}
 						}
 					}
@@ -259,7 +314,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 			policyInstance.ObjectMeta.Name, len(policyInstance.Spec.NodeSelector)))
 	}
 
-	retryCount := 100
+	retryCount := 20
 	for retryCount > 0 {
 		// Trigger the state machine
 		status, err := x100Ctrl.triggerStateMachine(r, policyInstance)
