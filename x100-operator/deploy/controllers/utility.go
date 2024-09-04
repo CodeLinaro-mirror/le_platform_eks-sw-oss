@@ -36,6 +36,17 @@ func LogAndExitOnError(logit string, err error) {
 	}
 }
 
+func cleanupStaleAnnotations(annotations map[string]string) map[string]string {
+	if _, ok := annotations[nodeProcessingStartTime]; ok {
+		delete(annotations, nodeProcessingStartTime)
+	}
+
+	if _, ok := annotations[x100HealthCheckStartTime]; ok {
+		delete(annotations, x100HealthCheckStartTime)
+	}
+	return annotations
+}
+
 func cleanupStaleCRLabels(labels map[string]string) map[string]string {
 	for _, label := range x100CrdLabels {
 		if _, ok := labels[label]; ok {
@@ -72,7 +83,7 @@ func cleanupLabelsOnReboot(labels map[string]string) map[string]string {
 
 func hasX100AggregationBlockedLabel(labels map[string]string) bool {
 	if _, ok := labels[x100NodeAggregationBlocked]; ok {
-		if labels[x100NodeAggregationBlocked] == "true" {
+		if labels[x100NodeAggregationBlocked] != "" {
 			return true
 		}
 	}
@@ -249,6 +260,24 @@ func hasKmmReadylabel(labels map[string]string) bool {
 	return false
 }
 
+func hasNodeProcessingStartTimeAnnotation(annotations map[string]string) bool {
+	for k, _ := range annotations {
+		if strings.Contains(k, nodeProcessingStartTime) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasX100HealthCheckStartTimeAnnotation(annotations map[string]string) bool {
+	for k, _ := range annotations {
+		if strings.Contains(k, x100HealthCheckStartTime) {
+			return true
+		}
+	}
+	return false
+}
+
 func isX100BootupStatusMarkedLabelTrue(labels map[string]string) bool {
 	if _, ok := labels[x100BootupStatusMarked]; ok {
 		if labels[x100BootupStatusMarked] == "true" {
@@ -259,11 +288,24 @@ func isX100BootupStatusMarkedLabelTrue(labels map[string]string) bool {
 }
 
 func isX100RunningWithPolicy(labels map[string]string, policyName string) bool {
-	if _, ok := labels[x100ActiveCR]; ok {
-		if labels[x100ActiveCR] == policyName {
+	/***
+		Either activeCR reflects correct policy
+		Or aggregationBlocked label indicates the correct policy
+		aggregationBlocked is transient state and would reflect
+		the true policy
+	***/
+	if !hasX100AggregationBlockedLabel(labels) {
+		if _, ok := labels[x100ActiveCR]; ok {
+			if labels[x100ActiveCR] == policyName {
+				return true
+			}
+		}
+	} else {
+		if policyName == labels[x100NodeAggregationBlocked] {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -367,7 +409,7 @@ func getX100EnabledNodesCount(n ControllerState) (int, *corev1.NodeList) {
 	for _, ns := range nodesInCRSelectorList {
 		for _, node := range list.Items {
 			if node.ObjectMeta.Name == ns {
-				labels := node.GetLabels()
+				labels := n.getNodeLabels(node)
 				if hasCustomX100Label(labels) {
 					count += 1
 					nodeList.Items = append(nodeList.Items, node)
@@ -394,6 +436,21 @@ func getPodNamePrefixFromIndex(index int) string {
 		name = ""
 	}
 	return name
+}
+
+func (c *ControllerState) getNodeLabels(node corev1.Node) map[string]string {
+	updatedNode := &corev1.Node{}
+	maxRetryCount := 5
+	for count := 0; count < maxRetryCount; count++ {
+		err := c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, updatedNode)
+		if err != nil {
+			continue
+		}
+		log.Log.Info(fmt.Sprintf("Fetched labels for node %s from API server",
+			updatedNode.GetName()))
+		return updatedNode.GetLabels()
+	}
+	return node.GetLabels()
 }
 
 func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string]string,
@@ -432,12 +489,12 @@ func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string
 			node.GetName()))
 
 		// Successful update
-		updatedLabels := node.GetLabels()
+		updatedLabels := c.getNodeLabels(*node)
 		if opType == LabelUpdateAdditionType {
 			if val, ok := updatedLabels[verifyLabel]; ok {
 				if val == labels[verifyLabel] {
 					log.Log.Info(fmt.Sprintf("Successfully applied label %s on node %s",
-											verifyLabel, node.GetName()))
+						verifyLabel, node.GetName()))
 					return nil
 				}
 			}
@@ -453,6 +510,124 @@ func (c *ControllerState) setX100NodeLabels(node *corev1.Node, labels map[string
 			verifyLabel, node.GetName()))
 	}
 	return errors.New("Failed to update node labels")
+}
+
+func (c *ControllerState) setX100NodeAnnotations(node *corev1.Node, annotations map[string]string,
+	verifyAnnotation string, opType string) error {
+	updatedNode := &corev1.Node{}
+	maxRetryCount := 5
+
+	for count := 0; count < maxRetryCount; count++ {
+		node.SetAnnotations(annotations)
+		err := c.rec.Update(context.TODO(), node)
+		if err != nil {
+			if kerrors.IsConflict(err) {
+				log.Log.Info(fmt.Sprintf("API server has new version for node %s, refetching",
+					node.GetName()))
+				err := c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, updatedNode)
+				if err != nil {
+					continue
+				}
+				node = updatedNode
+			}
+			// Could be a temporary glitch, retry
+			log.Log.Info(fmt.Sprintf("Unable to set annotation %s on node %s at the moment due to error, retrying",
+				verifyAnnotation, node.GetName()))
+			time.Sleep(time.Second * 1)
+		}
+
+		// force the update propagation to API server
+		err = c.rec.Get(context.TODO(), types.NamespacedName{Name: node.GetName()}, node)
+		if err != nil {
+			time.Sleep(time.Second * 1)
+			continue
+		}
+
+		log.Log.Info(fmt.Sprintf("Fetching latest version of node %s from API server",
+			node.GetName()))
+
+		// Successful update
+		updatedAnnotations := node.GetAnnotations()
+		if opType == LabelUpdateAdditionType {
+			if val, ok := updatedAnnotations[verifyAnnotation]; ok {
+				if val == updatedAnnotations[verifyAnnotation] {
+					log.Log.Info(fmt.Sprintf("Successfully applied annotation %s on node %s",
+						verifyAnnotation, node.GetName()))
+					return nil
+				}
+			}
+		} else if opType == LabelUpdateDeletionType {
+			if _, ok := updatedAnnotations[verifyAnnotation]; !ok {
+				log.Log.Info(fmt.Sprintf("Successfully deleted annotation %s on node %s",
+					verifyAnnotation, node.GetName()))
+				return nil
+			}
+		}
+
+		log.Log.Info(fmt.Sprintf("Unable to verify annotation %s for node %s at the moment, retrying",
+			verifyAnnotation, node.GetName()))
+	}
+	return errors.New("Failed to update node annotations")
+}
+
+func (c *ControllerState) testAndSetX100NodeAsIsolated(node *corev1.Node) bool {
+	annotations := node.GetAnnotations()
+	if timeStamp, ok := annotations[nodeProcessingStartTime]; ok {
+		startTime, err := time.Parse(timeFormat, timeStamp)
+		if err != nil {
+			return false
+		}
+		if time.Since(startTime) > time.Minute*gracePeriodNodeCompletion {
+			labels := c.getNodeLabels(*node)
+			labels[x100IsolateKey] = "true"
+			log.Log.Info(fmt.Sprintf("Node %s processing start time was %v, grace period elapsed, timing out",
+				node.GetName(), startTime))
+
+			// Clean labels
+			labels[x100LabelKey] = "false"
+			labels = cleanupStaleCRLabels(labels)
+			labels = cleanupStaleSelectorLabels(labels)
+
+			err = c.setX100NodeLabels(node, labels, x100IsolateKey, LabelUpdateAdditionType)
+			if err != nil {
+				return false
+			}
+
+			err, node = c.fetchUpdatedNodeInstance(node)
+			if err != nil {
+				return false
+			}
+
+			annotations = node.GetAnnotations()
+			delete(annotations, nodeProcessingStartTime)
+			node.SetAnnotations(annotations)
+			err = c.setX100NodeAnnotations(node, annotations, nodeProcessingStartTime, LabelUpdateDeletionType)
+			if err != nil {
+				log.Log.Info(fmt.Sprintf("Unable to reset node annotation %s for %s",
+					nodeProcessingStartTime, node.ObjectMeta.Name))
+				return false
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *ControllerState) hasX100DeviceHealthCheckTimedout(node *corev1.Node) bool {
+	annotations := node.GetAnnotations()
+	if timeStamp, ok := annotations[x100HealthCheckStartTime]; ok {
+		startTime, err := time.Parse(timeFormat, timeStamp)
+		if err != nil {
+			return false
+		}
+		if time.Since(startTime) > time.Minute*gracePeriodHealthCheck {
+			log.Log.Info(fmt.Sprintf("Health status check for x100 card on node %s has timed out",
+				node.GetName()))
+			return true
+		}
+	}
+	return false
 }
 
 func (c *ControllerState) createNFDResources() error {
@@ -489,7 +664,7 @@ func (c *ControllerState) getPodCompletionStatus(node *corev1.Node, podNamePrefi
 	log.Log.Info(fmt.Sprintf("Getting completion status for %s from %s", podNamePrefix, completionPath))
 	pod, err := c.getNamedPodOnNode(node, podNamePrefix)
 	if err != nil {
-		log.Log.Info(fmt.Sprintf("Failed to fetch firmware pod %s on node %s",
+		log.Log.Info(fmt.Sprintf("Failed to fetch pod %s on node %s",
 			pod.GetName(), node.GetName()))
 		return status, err
 	}
@@ -503,14 +678,13 @@ func (c *ControllerState) getPodCompletionStatus(node *corev1.Node, podNamePrefi
 
 	output, err := c.runCommandOnPod(pod.GetName(), pod.Spec.Containers[0].Name, command)
 	if err != nil {
-		log.Log.Info(fmt.Sprintf("Failed to read fw pod completion status on node %s", node.GetName()))
+		log.Log.Info(fmt.Sprintf("Failed to read pod completion status on node %s", node.GetName()))
 		return status, err
 	}
 
 	out := string(output)
-	//log.Log.Info(fmt.Sprintf("Completion status as read from firmware pod on node %s is %s", node.GetName(), out))
 	if strings.Contains(out, "completed") {
-		log.Log.Info(fmt.Sprintf("Completion status as read from firmware pod on node %s is %s", node.GetName(), out))
+		log.Log.Info(fmt.Sprintf("Completion status as read from pod on node %s is %s", node.GetName(), out))
 		return true, nil
 	}
 	return status, nil
@@ -562,7 +736,7 @@ func isModuleReady(moduleName string, n ControllerState) xcardv1.State {
 	for _, ns := range nodesInCRSelectorList {
 		for _, node := range node_list.Items {
 			if node.ObjectMeta.Name == ns {
-				labels := node.GetLabels()
+				labels := n.getNodeLabels(node)
 				if hasKmmReadylabel(labels) {
 					nodesUnderCurrentPolicy += 1
 				}
@@ -570,72 +744,43 @@ func isModuleReady(moduleName string, n ControllerState) xcardv1.State {
 		}
 	}
 
-	if module.Status.ModuleLoader.AvailableNumber != nodesUnderCurrentPolicy {
+	if nodesUnderCurrentPolicy == 0 {
+		// No node under policy yet has a module pod resource
 		return xcardv1.NotOperational
 	}
-	if module.Status.ModuleLoader.AvailableNumber == 0 && nodesUnderCurrentPolicy == 0 {
-		return xcardv1.Operational
-	}
+
 	return xcardv1.Operational
 }
 
 func isPodReady(labelkey string, labelvalue string, n ControllerState, phase corev1.PodPhase) xcardv1.State {
-	nodelist := &corev1.NodeList{}
+	/***
+		Pod ready only needs to check for existence of atleast one Pod
+		It doesn't need to wait for pods to come up in all nodes
+		under current policy.
+
+	***/
 	list := &corev1.PodList{}
-	podsUnderCurrentCR := &corev1.PodList{}
 
 	opts := []client.ListOption{&client.MatchingLabels{labelkey: labelvalue}}
 
 	err := n.rec.List(context.TODO(), list, opts...)
 	if err != nil {
 		log.Log.Info("Could not get PodList", err)
+		return xcardv1.NotOperational
 	}
 
-	/***
-		We can check for pods bring up on all eligible nodes under currentCR
-		Match the pods with label selector against nodes with a particular running version
-		TBD func areDsOwnedPodsReady(selector string, version string)
-	***/
 	log.Log.Info(fmt.Sprintf("%v - %s pods in the cluster", len(list.Items), labelvalue))
 
 	if len(list.Items) == 0 {
 		return xcardv1.NotOperational
 	}
 
-	x100NodeCount, nodelist := getX100EnabledNodesCount(n)
-	if x100NodeCount == -1 {
+	pd := list.Items[0]
+	if pd.Status.Phase != phase {
+		log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "!=", phase)
 		return xcardv1.NotOperational
 	}
 
-	x100PodCount := 0
-	for _, pod := range list.Items {
-		for _, node := range nodelist.Items {
-			if pod.Spec.NodeName == node.ObjectMeta.Name {
-				x100PodCount += 1
-				podsUnderCurrentCR.Items = append(podsUnderCurrentCR.Items, pod)
-			}
-		}
-	}
-	log.Log.Info(fmt.Sprintf("%v - %s pods under policy %s",
-		len(list.Items), labelvalue, n.x100Policy.ObjectMeta.Name))
-	log.Log.Info(fmt.Sprintf("Need %v - %s pods under policy %s",
-		x100NodeCount, labelvalue, n.x100Policy.ObjectMeta.Name))
-
-	if x100PodCount < x100NodeCount {
-		return xcardv1.NotOperational
-	}
-
-	//if len(list.Items) < x100NodeCount {
-	// Each x100 enabled node should have a pod
-	//	return xcardv1.NotOperational
-	//}
-
-	for _, pd := range podsUnderCurrentCR.Items {
-		if pd.Status.Phase != phase {
-			log.Log.Info("DEBUG: Pod", "Phase", pd.Status.Phase, "!=", phase)
-			return xcardv1.NotOperational
-		}
-	}
 	return xcardv1.Operational
 }
 
@@ -687,6 +832,24 @@ func isDaemonSetReady(name string, n ControllerState) xcardv1.State {
 	return isPodReady("app", name, n, "Running")
 }
 
+func (c *ControllerState) isFirmwareDSCreated() bool {
+	ds := &appsv1.DaemonSet{}
+	dsName := FirmwareDsName + SoftwareVersionSeperator + c.x100Policy.Spec.SwVersion
+	log.Log.Info(fmt.Sprintf("Checking if %s daemonSet exists", dsName))
+	maxRetryCount := 3
+	for count := 0; count < maxRetryCount; count++ {
+		err := c.rec.Get(context.TODO(), types.NamespacedName{Name: FirmwareDsName}, ds)
+		if err != nil {
+			if kerrors.IsNotFound(err) {
+				break
+			}
+		} else {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *ControllerState) getKmmPodOnNode(node *corev1.Node, podNamePrefix string) (corev1.Pod, error) {
 	returnPod := corev1.Pod{}
 	nodeName := node.GetName()
@@ -718,55 +881,118 @@ func (c *ControllerState) getKmmPodOnNode(node *corev1.Node, podNamePrefix strin
 
 func (c *ControllerState) markHealthCheckedforCurrentCR() {
 	currentCR := c.x100Policy.ObjectMeta.Name
+
 	opts := []client.ListOption{}
 	node_list := &corev1.NodeList{}
 	err := c.rec.List(context.TODO(), node_list, opts...)
+
 	for _, node := range node_list.Items {
-		labels := node.GetLabels()
+		labels := c.getNodeLabels(node)
+		/***
+			We need to check if the time since healthcheck started has passed
+			300 secs. If yes, we need mark the status as false
+			If boot status is unknown still, we can skip processing the node
+		***/
 		if isX100RunningWithPolicy(labels, currentCR) {
+			timedout := c.hasX100DeviceHealthCheckTimedout(&node)
 			hasX100BootupSuccess := true
 			if _, ok := labels[x100BootupSuccess]; ok {
-				if labels[x100BootupSuccess] != "true" {
-					hasX100BootupSuccess = false
-					labels[x100BootupSuccess] = "false"
+				if labels[x100BootupSuccess] != "unknown" || timedout {
+					if labels[x100BootupSuccess] != "true" {
+						hasX100BootupSuccess = false
+						labels[x100BootupSuccess] = "false"
+					}
+					labels[x100BootupStatusMarked] = "true"
+					log.Log.Info(fmt.Sprintf("Marking bootSuccess label as %s on node %s",
+						labels[x100BootupSuccess], node.GetName()))
+
+					//cleanup
+					nodeHasRolledBackLabel := hasX100RolledBackLabel(labels)
+					nodeHasEnablingFirstPolicyLabel := hasX100EnablingFirstPolicy(labels)
+					hasX100RebootedLabel := hasX100ComingUpAfterRebootLabel(labels)
+					hasx100TeardownCompleted := hasX100TeardownCompletedLabel(labels)
+					hasx100Upgrading := hasX100UpgradingLabel(labels)
+
+					if hasx100Upgrading {
+						delete(labels, x100Upgrading)
+					}
+					if nodeHasRolledBackLabel {
+						delete(labels, x100RolledBack)
+					}
+					if nodeHasEnablingFirstPolicyLabel {
+						delete(labels, x100EnablingFirstPolicy)
+					}
+					if hasX100RebootedLabel {
+						delete(labels, X100ComingUpAfterReboot)
+					}
+					if hasx100TeardownCompleted {
+						delete(labels, x100TeardownCompleted)
+					}
+
+					if hasx100Upgrading && !hasX100BootupSuccess {
+						labels[x100UpgradeFailed] = labels[x100SwVersion]
+						log.Log.Info(fmt.Sprintf("Marking upgrade as failed on node %s as bootSuccess is %v",
+							node.GetName(), hasX100BootupSuccess))
+					}
+
+					err = c.setX100NodeLabels(&node, labels, x100BootupStatusMarked, LabelUpdateAdditionType)
+					if err != nil {
+						log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ", x100BootupStatusMarked, err.Error())
+					}
+
+					// Delete timing related annotations from the node as boot status is marked
+					annotations := node.GetAnnotations()
+					annotations = cleanupStaleAnnotations(annotations)
+					node.SetAnnotations(annotations)
+					err := c.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
+					if err != nil {
+						log.Log.Info(fmt.Sprintf("Failed to delete x100HealthCheckStartTime annotation from node %s",
+							node.GetName()))
+					}
 				}
-				labels[x100BootupStatusMarked] = "true"
-			}
-
-			log.Log.Info(fmt.Sprintf("Marking bootSuccess label as %s on node %s",
-				labels[x100BootupSuccess], node.GetName()))
-
-			hasx100Upgrading := hasX100UpgradingLabel(labels)
-			hasx100TeardownCompleted := hasX100TeardownCompletedLabel(labels)
-			if hasx100Upgrading {
-				delete(labels, x100Upgrading)
-				log.Log.Info(fmt.Sprintf("Deleting label %s on node %s",
-					x100Upgrading, node.GetName()))
-			}
-			if hasx100TeardownCompleted {
-				delete(labels, x100TeardownCompleted)
-				log.Log.Info(fmt.Sprintf("Deleting label %s on node %s",
-					x100TeardownCompleted, node.GetName()))
-			}
-
-			if hasx100Upgrading && !hasX100BootupSuccess {
-				labels[x100UpgradeFailed] = labels[x100SwVersion]
-				log.Log.Info(fmt.Sprintf("Marking upgrade as failed on node %s as bootSuccess is %v",
-					node.GetName(), hasX100BootupSuccess))
-			}
-			/***
-			node.SetLabels(labels)
-			err = c.rec.Update(context.TODO(), &node)
-			if err != nil {
-				log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ", x100BootupStatusMarked, err.Error())
-			}
-			***/
-			err = c.setX100NodeLabels(&node, labels, x100BootupStatusMarked, LabelUpdateAdditionType)
-			if err != nil {
-				log.Log.Info("Unable to label node", node.ObjectMeta.Name, " with ", x100BootupStatusMarked, err.Error())
 			}
 		}
 	}
+}
+
+func (c *ControllerState) attachX100Annotation(node *corev1.Node, annotation string) (*corev1.Node, error) {
+	annotations := node.GetAnnotations()
+	timeStamp := time.Now().UTC().Format(timeFormat)
+	annotations[annotation] = timeStamp
+	node.SetAnnotations(annotations)
+
+	//err := c.rec.Update(context.TODO(), node)
+	err := c.setX100NodeAnnotations(node, annotations, annotation, LabelUpdateAdditionType)
+	if err != nil {
+		return node, fmt.Errorf("Unable to update node %s with %s annotation, err %s",
+			node.ObjectMeta.Name, annotation, err.Error())
+	}
+
+	err, node = c.fetchUpdatedNodeInstance(node)
+	if err != nil {
+		return node, err
+	}
+	return node, nil
+}
+
+func (c *ControllerState) deleteX100Annotation(node *corev1.Node, annotation string) (*corev1.Node, error) {
+	annotations := node.GetAnnotations()
+
+	delete(annotations, annotation)
+	node.SetAnnotations(annotations)
+	//err := c.rec.Update(context.TODO(), node)
+	err := c.setX100NodeAnnotations(node, annotations, annotation, LabelUpdateDeletionType)
+	if err != nil {
+		return node, fmt.Errorf("Unable to delete %s annotation from node %s, err %s",
+			annotation, node.GetName(), err.Error())
+	}
+
+	err, node = c.fetchUpdatedNodeInstance(node)
+	if err != nil {
+		return node, err
+	}
+
+	return node, nil
 }
 
 func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
@@ -779,7 +1005,7 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 	log.Log.Info(fmt.Sprintf("Node %s transitioned to upgrading state", node.ObjectMeta.Name))
 
 	// Wait for existing pods to terminate
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 	if !hasX100TeardownCompletedLabel(labels) {
 		err = c.teardownX100ManagementPolicyOwnedPodsOnNode(node)
 		if err != nil {
@@ -809,8 +1035,7 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 	err = c.enablePodSelectorLabels(node)
 	if err != nil {
 		log.Log.Info(fmt.Sprintf("Unable to label node %s with pod selector labels, err %s", node.GetName(), err.Error()))
-		//return err
-		return nil
+		return err
 	}
 
 	log.Log.Info(fmt.Sprintf("Enabled pod selector labels for node %s", node.GetName()))
@@ -818,7 +1043,7 @@ func (c *ControllerState) runUpgradeSequenceForNode(node *corev1.Node) error {
 }
 
 func (c *ControllerState) transitionToUpgradingState(node *corev1.Node) error {
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 
 	if !hasX100UpgradingLabel(labels) {
 		//Remove stale labels if any
@@ -906,7 +1131,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	}
 
 	/*** Device Plugin Pod Deletion ***/
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 	if _, ok := labels[DevicePluginSelectorLabelKey]; ok {
 		delete(labels, DevicePluginSelectorLabelKey)
 		node.SetLabels(labels)
@@ -938,8 +1163,16 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	}
 
 	/*** HW Manager Pod Deletion ***/
-	labels = node.GetLabels()
+	labels = c.getNodeLabels(*node)
 	if _, ok := labels[HwMgrDsSelectorLabelKey]; ok {
+		/***
+		//Test code to cause upgrade stuck on a node
+		if node.GetName() == "psi-lassen-lh3" {
+			log.Log.Info(fmt.Sprintf("HW Manager pod %s can't be terminated, treat as stuck", hwManagerPodName))
+			return errors.New("Hw manager pod is stuck")
+		}
+		***/
+
 		delete(labels, HwMgrDsSelectorLabelKey)
 		node.SetLabels(labels)
 		err = c.setX100NodeLabels(node, labels, HwMgrDsSelectorLabelKey, LabelUpdateDeletionType)
@@ -970,7 +1203,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	}
 
 	/*** KMM Related Pod Deletion ***/
-	labels = node.GetLabels()
+	labels = c.getNodeLabels(*node)
 	if _, ok := labels[KModuleSelectorLabelKey]; ok {
 		delete(labels, KModuleSelectorLabelKey)
 		node.SetLabels(labels)
@@ -1002,7 +1235,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	}
 
 	/*** Firmware Pod Deletion ***/
-	labels = node.GetLabels()
+	labels = c.getNodeLabels(*node)
 	if _, ok := labels[FirmwareDsSelectorLabelKey]; ok {
 		delete(labels, FirmwareDsSelectorLabelKey)
 		node.SetLabels(labels)
@@ -1033,7 +1266,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 }
 
 func (c *ControllerState) updateSwVersionLabels(node *corev1.Node) error {
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 
 	activeCR, err := getActiveCRonNode(labels)
 	if err != nil {
@@ -1086,7 +1319,7 @@ func (c *ControllerState) updateSwVersionLabels(node *corev1.Node) error {
 
 func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	// Apply the pod selector labels
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 	updateLabels := false
 	currentIndex := 0
 	/***
@@ -1097,7 +1330,6 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 		/var/podcheck/hwmgr_pod_running,
 		for kmm check the ready label if present
 	***/
-
 	for index, label := range x100SelectorLabelsForCreation {
 		currentIndex = index
 		if _, ok := labels[label]; !ok {
@@ -1151,12 +1383,11 @@ func (c *ControllerState) enablePodSelectorLabels(node *corev1.Node) error {
 	} else {
 		log.Log.Info(fmt.Sprintf("All relevant labels already enabled in enablePodSelectorLabels(), returning..."))
 	}
-
 	return nil
 }
 
 func (c *ControllerState) transitionToRollingBackUpgradeState(node *corev1.Node) error {
-	labels := node.GetLabels()
+	labels := c.getNodeLabels(*node)
 
 	if !hasX100RollingBackUpgradeLabel(labels) {
 		for _, label := range x100StatusLabels {
@@ -1178,45 +1409,38 @@ func (c *ControllerState) transitionToRollingBackUpgradeState(node *corev1.Node)
 }
 
 func (c *ControllerState) waitForKmmPodTermination(node *corev1.Node) error {
+	labels := c.getNodeLabels(*node)
+	isKmmReady := hasKmmReadylabel(labels)
+	if isKmmReady {
+		log.Log.Info(fmt.Sprintf("Waiting for KMM Pod termination on %s",
+			node.GetName()))
 
-	for {
-		tnode := &corev1.Node{}
-		_, tnode = c.fetchUpdatedNodeInstance(node)
-
-		labels := tnode.GetLabels()
-		isKmmReady := hasKmmReadylabel(labels)
-		if !isKmmReady {
-			break
-		}
-		//log.Log.Info(fmt.Sprintf("Still running KMM rmmod worker pods on %v", tnode.GetName()))
-		time.Sleep(3 * time.Second)
+		// Unable to terminate pod
+		return errors.New(fmt.Sprintf("Waiting for KMM Pod termination on %s",
+			node.GetName()))
 	}
 	log.Log.Info(fmt.Sprintf("Successfully drained all Modules from %v, Returning", node.GetName()))
 	return nil
 }
 
 func (c *ControllerState) waitForPodTermination(node *corev1.Node, podType string, podNamePrefix string) error {
+	pod, err := c.getNamedPodOnNode(node, podNamePrefix)
 
-	for {
-		pod, err := c.getNamedPodOnNode(node, podNamePrefix)
-		// It is not necessarily a termination signal, may need additional checks
-		if pod.Name == "" {
-			// Pod was not found on the node
-			break
-		}
-		if err != nil {
-			return err
-		}
-		//if pod.DeletionTimestamp != nil {
-		//	break
-		//}
-		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
-			break
-		}
-		//log.Log.Info(fmt.Sprintf("Still terminating %v pod on %v", pod.GetName(), node.GetName()))
+	if err != nil {
+		log.Log.Info(fmt.Sprintf("Waiting for Pod termination on %s", node.GetName()))
+
+		// Unable to fetch the pod
+		return errors.New(fmt.Sprintf("Waiting to terminate %s pod successfully", podType))
 	}
-	log.Log.Info(fmt.Sprintf("Successfully drained %s pod from %v, Returning", podType, node.GetName()))
-	return nil
+
+	if pod.Name == "" || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+		// Pod terminated
+		log.Log.Info(fmt.Sprintf("Successfully drained %s pod from %s, Returning",
+			podType, node.GetName()))
+		return nil
+	}
+	log.Log.Info(fmt.Sprintf("Waiting to terminate %s pod successfully", podType))
+	return errors.New(fmt.Sprintf("Waiting to terminate %s pod successfully", podType))
 }
 
 func (c *ControllerState) getX100BootupStatusOnNode(node *corev1.Node, x100count int) (int, int, error) {
@@ -1383,4 +1607,68 @@ func (c *ControllerState) isNodeUnschedulable(node *corev1.Node) bool {
 		return true
 	}
 	return false
+}
+
+func (c *ControllerState) isX100NodeEligibleForBootStatusCheck(node *corev1.Node) (bool, int) {
+	/***
+		Ignore Node if
+			a. Not running with current policy
+			b. Has no X100 card attached
+			c. Already has bootup success label or status marked attached
+			d. UpgradeFailed or RollingBack upgrade
+			e. Upgrading/Rebooting but Teardown not completed
+			f. DevicePlugin Pod is not available(last pod in creation sequence)
+
+			certain cases do not warrant a node decrement as they are responsibility
+			of current policy but can not be processed right now
+			e.g Node is upgrading but Teardown not completed.
+	***/
+	labels := c.getNodeLabels(*node)
+	if !isX100RunningWithPolicy(labels, c.x100Policy.ObjectMeta.Name) {
+		log.Log.Info(fmt.Sprintf("Node %s not running with current policy %s, skipping bootStatusCheck",
+			node.GetName(), c.x100Policy.GetName()))
+		return false, 1
+
+	} else if !hasCustomX100Label(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s has no X100 card attached, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 1
+
+	} else if hasX100BootupSuccessLabel(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s has bootup success label true, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 1
+
+	} else if hasX100BootupStatusMarkedLabel(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s has bootup status marked label, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 1
+
+	} else if hasX100UpgradeFailedLabel(labels) || hasX100RollingBackUpgradeLabel(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s is on the downgrade/rollback path, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 0
+
+	} else if hasX100ComingUpAfterRebootLabel(labels) && !hasX100TeardownCompletedLabel(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s has coming up after reboot label but termination pending, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 0
+
+	} else if hasX100UpgradingLabel(labels) && !hasX100TeardownCompletedLabel(labels) {
+		log.Log.Info(fmt.Sprintf("Node %s is on upgrade path but teardown is not completed, skipping bootStatusCheck",
+			node.GetName()))
+		return false, 0
+
+	} else {
+		pod, err := c.getNamedPodOnNode(node, PodNamePrefixes["devicePlugin"])
+		if err != nil || (pod.Status.Phase != "Running") {
+			log.Log.Info(fmt.Sprintf("DevicePlugin pod is not running on node %s, skipping bootStatusCheck",
+				node.GetName()))
+			return false, 0
+		}
+	}
+	log.Log.Info(fmt.Sprintf("Node %s is eligible for bootStatusCheck, processing...",
+		node.GetName()))
+	// We can process the node further
+	return true, 0
 }

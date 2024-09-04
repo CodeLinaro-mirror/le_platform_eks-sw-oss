@@ -50,7 +50,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 		return xcardv1.Operational, nil
 
 	} else {
-		labels := rnode.GetLabels()
+		labels := c.getNodeLabels(*rnode)
 		isNodeUnderCurrentPolicy := isX100RunningWithPolicy(labels, policy.ObjectMeta.Name)
 		upgradeFailedOnNode := hasX100UpgradeFailedLabel(labels)
 		nodeHasRollingBackUpgradeLabel := hasX100RollingBackUpgradeLabel(labels)
@@ -94,7 +94,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 						return xcardv1.NotOperational, err
 					}
 
-					labels = node.GetLabels()
+					labels = c.getNodeLabels(*node)
 					if !hasX100TeardownCompletedLabel(labels) {
 						err = c.teardownX100ManagementPolicyOwnedPodsOnNode(node)
 						if err != nil {
@@ -145,7 +145,7 @@ func (c *ControllerState) rollbackHandler(policy *xcardv1.X100ManagementPolicy, 
 					if err != nil {
 						return xcardv1.NotOperational, err
 					}
-					labels = node.GetLabels()
+					labels = c.getNodeLabels(*node)
 
 					labels[x100ActiveCR] = priorCR
 					labels[x100SwVersion] = priorCRInstance.Spec.SwVersion

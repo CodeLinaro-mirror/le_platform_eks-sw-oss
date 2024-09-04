@@ -6,6 +6,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 package controllers
 
 import (
+	"time"
 	xcardv1 "x100-operator/api/v1"
 )
 
@@ -74,6 +75,15 @@ var PodCompletionPath = []string{
 	"/var/podcheck/fw_pod_running",
 	"/var/podcheck/hwmgr_pod_running",
 }
+
+// Annotations
+const (
+	timeFormat                = time.RFC3339
+	gracePeriodHealthCheck    = 5  // Minutes
+	gracePeriodNodeCompletion = 30 // Minutes
+	nodeProcessingStartTime   = "qualcomm.com/x100.nodeProcessingStartTime"
+	x100HealthCheckStartTime  = "qualcomm.com/x100.x100HealthCheckStartTime"
+)
 
 const (
 	x100LabelKey               = "qualcomm.com/x100.present"
