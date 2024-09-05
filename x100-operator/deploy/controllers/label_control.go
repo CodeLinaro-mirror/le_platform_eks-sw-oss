@@ -292,13 +292,20 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 							if err != nil {
 								return err
 							}
+
+							err, rnode := c.fetchUpdatedNodeInstance(&node)
+							if err != nil {
+								return err
+							}
+							node = *rnode
+							labels = node.GetLabels()
+
 							log.Log.Info(fmt.Sprintf("[Reboot] Termination completed, setting %s to true", x100TeardownCompleted))
 							// Mark teardown sequence completion
 							labels[x100TeardownCompleted] = "true"
 
 							node.SetLabels(labels)
-							//err := c.rec.Update(context.TODO(), &node)
-							err := c.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
+							err = c.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
 							if err != nil {
 								return fmt.Errorf("Unable to label node %s with %s, err %s", node.ObjectMeta.Name,
 									x100TeardownCompleted, err.Error())
