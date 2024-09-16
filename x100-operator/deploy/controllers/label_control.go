@@ -385,10 +385,10 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 									// Todo What if the label attachment fails, how to fallback
 									labels[x100NodeAggregationBlocked] = "true"
 									node.SetLabels(labels)
-									err = c.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateDeletionType)
+									err = c.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateAdditionType)
 									//err = c.rec.Update(context.TODO(), &node)
 									if err != nil {
-										return fmt.Errorf("Unable to remove label %s from node %s, err %s",
+										return fmt.Errorf("Unable to add label %s to node %s, err %s",
 											x100NodeAggregationBlocked, node.ObjectMeta.Name, err.Error())
 									}
 								} else {
