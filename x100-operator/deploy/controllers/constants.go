@@ -49,6 +49,10 @@ const (
 	LabelUpdateDeletionType = "deletion"
 )
 
+const (
+	PlaceHolderNode = "EmptyNode"
+)
+
 // Sequence for deletion
 var x100SelectorLabelsForDeletion = []string{
 	DevicePluginSelectorLabelKey,
