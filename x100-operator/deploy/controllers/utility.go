@@ -682,6 +682,20 @@ func (c *ControllerState) getPodCompletionStatus(node *corev1.Node, podNamePrefi
 		return status, err
 	}
 
+	//check for unavailability of daemonset
+	opts := []client.ListOption{client.MatchingLabels{"app": podNamePrefix}}
+	list := &appsv1.DaemonSetList{}
+	err = c.rec.List(context.TODO(), list, opts...)
+	if err != nil {
+		log.Log.Info("Could not get DaemonSetList", err)
+	}
+	for _, ds := range list.Items {
+		if ds.Status.NumberUnavailable != 0{
+			log.Log.Info(fmt.Sprintf("Daemonset with prefix %s is not available yet", podNamePrefix))
+			return status, nil
+		}
+	}
+
 	out := string(output)
 	if strings.Contains(out, "completed") {
 		log.Log.Info(fmt.Sprintf("Completion status as read from pod on node %s is %s", node.GetName(), out))
