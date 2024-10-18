@@ -36,6 +36,13 @@ func LogAndExitOnError(logit string, err error) {
 	}
 }
 
+func resetBootHealthTimer(annotations map[string]string) map[string]string {
+	if _, ok := annotations[x100HealthCheckStartTime]; ok {
+		delete(annotations, x100HealthCheckStartTime)
+	}
+	return annotations
+}
+
 func cleanupStaleAnnotations(annotations map[string]string) map[string]string {
 	if _, ok := annotations[nodeProcessingStartTime]; ok {
 		delete(annotations, nodeProcessingStartTime)
@@ -79,6 +86,39 @@ func cleanupLabelsOnReboot(labels map[string]string) map[string]string {
 		}
 	}
 	return labels
+}
+
+func (c *ControllerState) cleanupOnNodeIsolation(node *corev1.Node) error {
+	labels := c.getNodeLabels(*node)
+
+	//cleanup labels
+	labels = cleanupStaleCRLabels(labels)
+	labels = cleanupStaleSelectorLabels(labels)
+
+	// Retain x100.present label for consistency
+	labels[x100LabelKey] = "false"
+
+	err := c.setX100NodeLabels(node, labels, x100ActiveCR, LabelUpdateDeletionType)
+	if err != nil {
+		return err
+	}
+	// Fetch updated node instance
+	err, node = c.fetchUpdatedNodeInstance(node)
+	if err != nil {
+		return err
+	}
+
+	//cleanup annotations
+	annotations := node.GetAnnotations()
+	annotations = cleanupStaleAnnotations(annotations)
+	node.SetAnnotations(annotations)
+	err = c.setX100NodeAnnotations(node, annotations, nodeProcessingStartTime, LabelUpdateDeletionType)
+	if err != nil {
+		log.Log.Info(fmt.Sprintf("Unable to reset node annotation %s for %s",
+			nodeProcessingStartTime, node.ObjectMeta.Name))
+		return err
+	}
+	return nil
 }
 
 func hasX100AggregationBlockedLabel(labels map[string]string) bool {
@@ -600,6 +640,7 @@ func (c *ControllerState) testAndSetX100NodeAsIsolated(node *corev1.Node) bool {
 
 			annotations = node.GetAnnotations()
 			delete(annotations, nodeProcessingStartTime)
+			delete(annotations, x100HealthCheckStartTime)
 			node.SetAnnotations(annotations)
 			err = c.setX100NodeAnnotations(node, annotations, nodeProcessingStartTime, LabelUpdateDeletionType)
 			if err != nil {

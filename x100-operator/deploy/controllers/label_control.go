@@ -91,16 +91,20 @@ func (c *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 		if !hasCustomLabel && hasPCILabel && isNodeSchedulable {
 			// Check for Isolate Label before applying Custom Label
 			if hasIsolateLabel {
-				labels[x100LabelKey] = "false"
+				err = c.cleanupOnNodeIsolation(&node)
+				if err != nil {
+					return err
+				}
+				log.Log.Info(fmt.Sprintf("Label %s set to false", x100LabelKey))
 			} else {
 				labels[x100LabelKey] = x100LabelValue
+				err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
+				if err != nil {
+					return fmt.Errorf("Unable to label node %s with %s, err %s",
+						node.ObjectMeta.Name, x100LabelKey, err.Error())
+				}
+				log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
 			}
-			err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
-			if err != nil {
-				return fmt.Errorf("Unable to label node %s with %s, err %s",
-					node.ObjectMeta.Name, x100LabelKey, err.Error())
-			}
-			log.Log.Info(fmt.Sprintf("Label %s set to true", x100LabelKey))
 
 		} else if hasCustomLabel && (hasIsolateLabel || !hasPCILabel) {
 			// previously labelled node and no longer has X100
@@ -108,12 +112,17 @@ func (c *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, p
 			if hasIsolateLabel {
 				log.Log.Info(fmt.Sprintf("Node %s has been isolated, removed from further processing.",
 					node.ObjectMeta.Name))
-			}
-			labels[x100LabelKey] = "false"
-			node.SetLabels(labels)
-			err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateAdditionType)
-			if err != nil {
-				return fmt.Errorf("Unable to reset node label for %s with %s, err %s", node.ObjectMeta.Name, x100LabelKey, err.Error())
+				err = c.cleanupOnNodeIsolation(&node)
+				if err != nil {
+					return err
+				}
+			} else {
+				delete(labels, x100LabelKey)
+				err = c.setX100NodeLabels(&node, labels, x100LabelKey, LabelUpdateDeletionType)
+				if err != nil {
+					return fmt.Errorf("Unable to delete label %s on node %s, err %s",
+						x100LabelKey, node.ObjectMeta.Name, err.Error())
+				}
 			}
 			log.Log.Info(fmt.Sprintf("Stale Label %s set to false", x100LabelKey))
 		} else {

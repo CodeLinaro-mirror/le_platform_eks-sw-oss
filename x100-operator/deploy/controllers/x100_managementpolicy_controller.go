@@ -276,6 +276,16 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 									node.ObjectMeta.Name, err.Error()))
 								return reconcile.Result{}, err
 							}
+							// Delete boot health timer related annotation from the node
+							annotations = resetBootHealthTimer(annotations)
+							node.SetAnnotations(annotations)
+							err := x100Ctrl.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
+							if err != nil {
+								log.Log.Info(fmt.Sprintf("[Reboot] Failed to delete x100HealthCheckStartTime annotation from node %s",
+									node.GetName()))
+								return reconcile.Result{}, err
+							}
+
 						} else {
 							// Reboot with in a Reboot, force deletion of existing resources
 							log.Log.Info(fmt.Sprintf("Node %s has rebooted while recovering from earlier reboot",
@@ -474,16 +484,19 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 			// Detect the same in reconcile loop
 			// Enter this only if we are coming from the reboot path
 			// as we cleanup labels in this path
-			isX100Rebooting := hasX100ComingUpAfterRebootLabel(newLabels)
-			if !isX100Rebooting {
-				for _, condition := range newNode.Status.Conditions {
-					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
-						return true
+			if !hasIsolateLabel(newLabels) {
+				// Don't process the reboot path through operator is node is isolated
+				isX100Rebooting := hasX100ComingUpAfterRebootLabel(newLabels)
+				if !isX100Rebooting {
+					for _, condition := range newNode.Status.Conditions {
+						if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
+							return true
+						}
 					}
+				} else {
+					log.Log.Info("Detected reboot label while handling update event, triggering reconciler")
+					return true
 				}
-			} else {
-				log.Log.Info("Detected reboot label while handling update event, triggering reconciler")
-				return true
 			}
 
 			hasPCILabel := hasX100PCILabels(newLabels)
