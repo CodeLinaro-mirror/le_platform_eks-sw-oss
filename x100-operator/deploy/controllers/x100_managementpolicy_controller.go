@@ -277,6 +277,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 								return reconcile.Result{}, err
 							}
 							// Delete boot health timer related annotation from the node
+							annotations := node.GetAnnotations()
 							annotations = resetBootHealthTimer(annotations)
 							node.SetAnnotations(annotations)
 							err := x100Ctrl.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
@@ -484,19 +485,20 @@ func watchx100NodeLabelChanges(r *X100ManagementPolicyReconciler, c controller.C
 			// Detect the same in reconcile loop
 			// Enter this only if we are coming from the reboot path
 			// as we cleanup labels in this path
-			if !hasIsolateLabel(newLabels) {
-				// Don't process the reboot path through operator is node is isolated
-				isX100Rebooting := hasX100ComingUpAfterRebootLabel(newLabels)
-				if !isX100Rebooting {
-					for _, condition := range newNode.Status.Conditions {
-						if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
-							return true
+			// Don't process the reboot path through operator is node is isolated
+			isX100Rebooting := hasX100ComingUpAfterRebootLabel(newLabels)
+			if !isX100Rebooting {
+				for _, condition := range newNode.Status.Conditions {
+					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
+						if hasX100IsolateLabel(newLabels) {
+							return false
 						}
+						return true
 					}
-				} else {
-					log.Log.Info("Detected reboot label while handling update event, triggering reconciler")
-					return true
 				}
+			} else {
+				log.Log.Info("Detected reboot label while handling update event, triggering reconciler")
+				return true
 			}
 
 			hasPCILabel := hasX100PCILabels(newLabels)
