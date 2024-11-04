@@ -262,6 +262,17 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							return reconcile.Result{}, nil
 						}
 
+						// Delete boot health timer related annotation from the node
+						annotations := node.GetAnnotations()
+						annotations = resetBootHealthTimer(annotations)
+						node.SetAnnotations(annotations)
+						err := x100Ctrl.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
+						if err != nil {
+							log.Log.Info(fmt.Sprintf("[Reboot] Failed to delete x100HealthCheckStartTime annotation from node %s",
+								node.GetName()))
+							return reconcile.Result{}, err
+						}
+
 						if !hasX100ComingUpAfterRebootLabel(labels) {
 							log.Log.Info(fmt.Sprintf("Reconciler loop hit on reboot detection, setting reboot label"))
 							// We entered reconcile due to node entering reboot path
@@ -276,17 +287,6 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 									node.ObjectMeta.Name, err.Error()))
 								return reconcile.Result{}, err
 							}
-							// Delete boot health timer related annotation from the node
-							annotations := node.GetAnnotations()
-							annotations = resetBootHealthTimer(annotations)
-							node.SetAnnotations(annotations)
-							err := x100Ctrl.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
-							if err != nil {
-								log.Log.Info(fmt.Sprintf("[Reboot] Failed to delete x100HealthCheckStartTime annotation from node %s",
-									node.GetName()))
-								return reconcile.Result{}, err
-							}
-
 						} else {
 							// Reboot with in a Reboot, force deletion of existing resources
 							log.Log.Info(fmt.Sprintf("Node %s has rebooted while recovering from earlier reboot",
