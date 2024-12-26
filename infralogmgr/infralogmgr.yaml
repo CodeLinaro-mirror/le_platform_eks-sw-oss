@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: infralogmgr-pod
+  namespace: x100-operator-resources
+  labels:
+    app: infralogmgr-pod
+spec:
+  imagePullSecrets:
+  - name: eks-pull-secret
+  containers:
+  - image: <Replace with your registry>
+    command: [ "tail", "-f", "/dev/null" ]
+    imagePullPolicy: Always
+    name: infralogmgr-pod
+    securityContext:
+      privileged: true
+      runAsUser: 0
+    volumeMounts:
+    - mountPath: /dev
+      name: dev
+    - mountPath: /var/log
+      name: varlog
+  hostNetwork: true
+  restartPolicy: Always
+  serviceAccount: csm-x100-sa
+  serviceAccountName: csm-x100-sa
+  volumes:
+  - name: dev
+    hostPath:
+      path: /dev
+  - name: varlog
+    hostPath:
+      path: /var/log
+  nodeSelector:
+    kubernetes.io/hostname: <Replace with node name>
