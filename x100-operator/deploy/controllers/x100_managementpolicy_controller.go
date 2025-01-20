@@ -23,6 +23,9 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
+	xcardv1 "x100-operator/api/v1"
+
 	kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -40,8 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	"time"
-	xcardv1 "x100-operator/api/v1"
 )
 
 var x100Ctrl ControllerState
@@ -230,17 +231,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
-
-	// Handle runtime emptied selector list
-	if len(policyInstance.Spec.NodeSelector) == 1 {
-		if policyInstance.Spec.NodeSelector[0] == PlaceHolderNode {
-			log.Log.Info(fmt.Sprintf("Policy %s has only placeholder node in selector list, returning...",
-										policyInstance.GetName()))
-			return reconcile.Result{}, nil
-		}
-	}
-
-	// Reboot path handling
+	//remove the aggregation block label
 	opts := []client.ListOption{}
 	list := &corev1.NodeList{}
 	err = r.List(context.TODO(), list, opts...)
@@ -248,7 +239,70 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		return reconcile.Result{}, err
 	}
 
+	for _, node := range list.Items {
+		labels := node.GetLabels()
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+				if hasX100AggregationBlockedLabel(labels) && hasX100ComingUpAfterRebootLabel(labels) {
+					log.Log.Info(fmt.Sprintf("Node %s is up after a reboot", node.GetName()))
+					nodeName := node.ObjectMeta.Name
+					nodeSlice := []string{nodeName}
+					policyName := labels[x100NodeAggregationBlocked]
+					policyopts := []client.ListOption{}
+					policylist := &xcardv1.X100ManagementPolicyList{}
+					err := x100Ctrl.rec.List(context.TODO(), policylist, policyopts...)
+					if err != nil {
+						log.Log.Error(err, "labelX100NodeswithCR()- Unable to list X100ManagementPolicy CRs")
+					}
+					for _, cr := range policylist.Items {
+						if cr.ObjectMeta.GetName() == policyName {
+							for _, node := range cr.Spec.NodeSelector {
+								if node == nodeName {
+									break
+								}
+							}
+							if cr.Spec.NodeSelector[0] == PlaceHolderNode {
+								cr.Spec.NodeSelector = []string{}
+							}
+							cr.Spec.NodeSelector = append(cr.Spec.NodeSelector, nodeSlice...)
+							x100Ctrl.rec.Update(context.TODO(), &cr)
+							if err != nil {
+								log.Log.Info(fmt.Sprintf("Unable to add node %s to exisiting policy : %s", cr.ObjectMeta.GetName(), node.ObjectMeta.Name))
+								return reconcile.Result{}, err
+							}
+						}
+					}
+					delete(labels, x100NodeAggregationBlocked)
+					err = x100Ctrl.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateDeletionType)
+					if err != nil {
+						log.Log.Info(fmt.Sprintf("Unable to remove aggregation label for %s in reboot path, err %s",
+							node.ObjectMeta.Name, err.Error()))
+						return reconcile.Result{}, err
+					}
+				}
+			}
+		}
+	}
+	// Handle runtime emptied selector list
+	if len(policyInstance.Spec.NodeSelector) == 1 {
+		if policyInstance.Spec.NodeSelector[0] == PlaceHolderNode {
+			log.Log.Info(fmt.Sprintf("Policy %s has only placeholder node in selector list, returning...",
+				policyInstance.GetName()))
+			return reconcile.Result{}, nil
+		}
+	}
+
+	// Reboot path handling
+	opts = []client.ListOption{}
+	list = &corev1.NodeList{}
+	err = r.List(context.TODO(), list, opts...)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	reconcilerTriggeredOnReboot := false
+	countUnavailableNodes := 0
+	countPolicyNodes := len(policyInstance.Spec.NodeSelector)
 	for _, node := range list.Items {
 		for _, ns := range policyInstance.Spec.NodeSelector {
 			if node.ObjectMeta.Name == ns {
@@ -256,21 +310,11 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 				for _, condition := range node.Status.Conditions {
 					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionUnknown {
 						reconcilerTriggeredOnReboot = true
+						countUnavailableNodes++
 						if hasX100UpgradeFailedLabel(labels) {
 							// Prioritize upgrade rollback over reboot
 							log.Log.Info(fmt.Sprintf("Not setting reboot label to let pending downgrade resume later"))
 							return reconcile.Result{}, nil
-						}
-
-						// Delete boot health timer related annotation from the node
-						annotations := node.GetAnnotations()
-						annotations = resetBootHealthTimer(annotations)
-						node.SetAnnotations(annotations)
-						err := x100Ctrl.setX100NodeAnnotations(&node, annotations, x100HealthCheckStartTime, LabelUpdateDeletionType)
-						if err != nil {
-							log.Log.Info(fmt.Sprintf("[Reboot] Failed to delete x100HealthCheckStartTime annotation from node %s",
-								node.GetName()))
-							return reconcile.Result{}, err
 						}
 
 						if !hasX100ComingUpAfterRebootLabel(labels) {
@@ -279,6 +323,27 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							labels = cleanupLabelsOnReboot(labels)
 							// Label to indicate that we were in reboot path
 							labels[X100ComingUpAfterReboot] = "true"
+							labels[x100NodeAggregationBlocked] = policyInstance.ObjectMeta.Name
+
+							//remove the node from the policy
+							pnodes := policyInstance.Spec.NodeSelector
+							var index int
+							for i, pnode := range pnodes {
+								if pnode == node.ObjectMeta.Name {
+									index = i
+									break
+								}
+							}
+							policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector[:index], policyInstance.Spec.NodeSelector[index+1:]...)
+							if len(policyInstance.Spec.NodeSelector) == 0 {
+								policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector, PlaceHolderNode)
+							}
+							r.Update(context.TODO(), policyInstance)
+							if err != nil {
+								log.Log.Info(fmt.Sprintf("Unable to remove node %s from exisiting policy : %s",
+									policyInstance.ObjectMeta.GetName(), node.ObjectMeta.Name))
+								return reconcile.Result{}, err
+							}
 
 							node.SetLabels(labels)
 							err = x100Ctrl.setX100NodeLabels(&node, labels, X100ComingUpAfterReboot, LabelUpdateAdditionType)
@@ -289,8 +354,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							}
 						} else {
 							// Reboot with in a Reboot, force deletion of existing resources
-							log.Log.Info(fmt.Sprintf("Node %s has rebooted while recovering from earlier reboot",
-								node.GetName()))
+							log.Log.Info(fmt.Sprintf("Node %s has rebooted while recovering from earlier reboot", node.GetName()))
 							if hasX100TeardownCompletedLabel(labels) {
 								delete(labels, x100TeardownCompleted)
 								err = x100Ctrl.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateDeletionType)
@@ -307,7 +371,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}
 
-	if reconcilerTriggeredOnReboot {
+	if reconcilerTriggeredOnReboot && countUnavailableNodes == countPolicyNodes {
 		log.Log.Info("Exiting reconciler, waiting for one or more nodes to reboot")
 		return reconcile.Result{}, nil
 	}
