@@ -241,15 +241,22 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 
 	for _, node := range list.Items {
 		labels := node.GetLabels()
-		for _, condition := range node.Status.Conditions {
-			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
-				if hasX100AggregationBlockedLabel(labels) && hasX100ComingUpAfterRebootLabel(labels) {
+		if hasX100AggregationBlockedLabel(labels) && hasX100ComingUpAfterRebootLabel(labels) {
+			/***
+				If not is not part of any policy, then we can check for node status conditions
+				Otherwise, user has supplied invalid node into a policy List
+				We need to take out this node from the policy
+			***/
+
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
 					log.Log.Info(fmt.Sprintf("Node %s is up after a reboot", node.GetName()))
 					nodeName := node.ObjectMeta.Name
 					nodeSlice := []string{nodeName}
 					policyName := labels[x100NodeAggregationBlocked]
 					policyopts := []client.ListOption{}
 					policylist := &xcardv1.X100ManagementPolicyList{}
+
 					err := x100Ctrl.rec.List(context.TODO(), policylist, policyopts...)
 					if err != nil {
 						log.Log.Error(err, "labelX100NodeswithCR()- Unable to list X100ManagementPolicy CRs")
@@ -278,6 +285,32 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 						log.Log.Info(fmt.Sprintf("Unable to remove aggregation label for %s in reboot path, err %s",
 							node.ObjectMeta.Name, err.Error()))
 						return reconcile.Result{}, err
+					}
+				} else {
+					// Node is not ready or status is unknown
+					// Removing node from the policy
+
+					pnodes := policyInstance.Spec.NodeSelector
+					index := -1
+					for i, pnode := range pnodes {
+						if pnode == node.ObjectMeta.Name {
+							index = i
+							break
+						}
+					}
+
+					if index != -1 {
+						// We did find a match in the current Policy
+						policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector[:index], policyInstance.Spec.NodeSelector[index+1:]...)
+						if len(policyInstance.Spec.NodeSelector) == 0 {
+							policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector, PlaceHolderNode)
+						}
+						r.Update(context.TODO(), policyInstance)
+						if err != nil {
+							log.Log.Info(fmt.Sprintf("Unable to remove node %s from exisiting policy : %s",
+								policyInstance.GetName(), node.GetName()))
+							return reconcile.Result{}, err
+						}
 					}
 				}
 			}
