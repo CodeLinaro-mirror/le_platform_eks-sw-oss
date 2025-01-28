@@ -1217,6 +1217,38 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 		return err
 	}
 
+	/*** KMM Related Pod Deletion ***/
+	labels = c.getNodeLabels(*node)
+	if _, ok := labels[KModuleSelectorLabelKey]; ok {
+		delete(labels, KModuleSelectorLabelKey)
+		node.SetLabels(labels)
+		err = c.setX100NodeLabels(node, labels, KModuleSelectorLabelKey, LabelUpdateDeletionType)
+		//err = c.rec.Update(context.TODO(), node)
+		if err != nil {
+			return fmt.Errorf("Unable to remove label %s from node %s, err %s", KModuleSelectorLabelKey, node.ObjectMeta.Name, err.Error())
+		}
+	}
+
+	err, node = c.fetchUpdatedNodeInstance(node)
+	if err != nil {
+		return err
+	}
+
+	err = c.waitForKmmPodTermination(node)
+	if err != nil {
+		return err
+	} else {
+		log.Log.Info(fmt.Sprintf("KModule related pod %s has been terminated", kModulePodName))
+	}
+
+	/*** May delete configMap as well ***/
+	log.Log.Info("Not deleting configMap", "Name", kmmConfigMapName)
+
+	err, node = c.fetchUpdatedNodeInstance(node)
+	if err != nil {
+		return err
+	}
+
 	/*** HW Manager Pod Deletion ***/
 	labels = c.getNodeLabels(*node)
 	if _, ok := labels[HwMgrDsSelectorLabelKey]; ok {
@@ -1256,39 +1288,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if err != nil {
 		return err
 	}
-
-	/*** KMM Related Pod Deletion ***/
-	labels = c.getNodeLabels(*node)
-	if _, ok := labels[KModuleSelectorLabelKey]; ok {
-		delete(labels, KModuleSelectorLabelKey)
-		node.SetLabels(labels)
-		err = c.setX100NodeLabels(node, labels, KModuleSelectorLabelKey, LabelUpdateDeletionType)
-		//err = c.rec.Update(context.TODO(), node)
-		if err != nil {
-			return fmt.Errorf("Unable to remove label %s from node %s, err %s", KModuleSelectorLabelKey, node.ObjectMeta.Name, err.Error())
-		}
-	}
-
-	err, node = c.fetchUpdatedNodeInstance(node)
-	if err != nil {
-		return err
-	}
-
-	err = c.waitForKmmPodTermination(node)
-	if err != nil {
-		return err
-	} else {
-		log.Log.Info(fmt.Sprintf("KModule related pod %s has been terminated", kModulePodName))
-	}
-
-	/*** May delete configMap as well ***/
-	log.Log.Info("Not deleting configMap", "Name", kmmConfigMapName)
-
-	err, node = c.fetchUpdatedNodeInstance(node)
-	if err != nil {
-		return err
-	}
-
+	
 	/*** Firmware Pod Deletion ***/
 	labels = c.getNodeLabels(*node)
 	if _, ok := labels[FirmwareDsSelectorLabelKey]; ok {

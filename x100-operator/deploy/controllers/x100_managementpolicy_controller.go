@@ -96,6 +96,43 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 		if isX100RunningWithPolicy(labels, policyInstance.ObjectMeta.Name) {
 			log.Log.Info(fmt.Sprintf("Processing node %s under currently deleted policy %s",
 				node.GetName(), policyInstance.GetName()))
+
+			for _, node := range list.Items {
+				labels := node.GetLabels()
+				if isX100RunningWithPolicy(labels, policyInstance.ObjectMeta.Name) {
+					log.Log.Info(fmt.Sprintf("Processing node %s under currently deleted policy %s",
+						node.GetName(), policyInstance.GetName()))
+
+					log.Log.Info(fmt.Sprintf("[Delete] Terminating pods for node %s on policy removal", node.ObjectMeta.Name))
+
+					if !hasX100TeardownCompletedLabel(labels) {
+						err = x100Ctrl.teardownX100ManagementPolicyOwnedPodsOnNode(&node)
+						if err != nil {
+							return err
+						}
+
+						err, rnode := x100Ctrl.fetchUpdatedNodeInstance(&node)
+						if err != nil {
+							return err
+						}
+						node = *rnode
+						labels = x100Ctrl.getNodeLabels(node)
+
+						log.Log.Info(fmt.Sprintf("[Delete] Termination completed, setting %s to true", x100TeardownCompleted))
+						// Mark teardown sequence completion
+						labels[x100TeardownCompleted] = "true"
+
+						node.SetLabels(labels)
+
+						err = x100Ctrl.setX100NodeLabels(&node, labels, x100TeardownCompleted, LabelUpdateAdditionType)
+						if err != nil {
+							log.Log.Info("Unable to label node %s with %s", node.ObjectMeta.Name, x100TeardownCompleted)
+							break
+						}
+					}
+				}
+			}
+
 			// Clean labels
 			labels = cleanupStaleCRLabels(labels)
 			labels = cleanupStaleSelectorLabels(labels)
