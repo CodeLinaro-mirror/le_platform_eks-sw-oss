@@ -24,15 +24,11 @@ import (
 	"context"
 	"fmt"
 	"time"
-	xcardv1 "x100-operator/api/v1"
 
-	kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -43,6 +39,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	kmmv1 "github.com/kubernetes-sigs/kernel-module-management/api/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	xcardv1 "x100-operator/api/v1"
 )
 
 var x100Ctrl ControllerState
@@ -205,6 +206,7 @@ func (r *X100ManagementPolicyReconciler) deletePolicyOwnedResources(policyInstan
 // +kubebuilder:rbac:groups=nfd.k8s-sigs.io,resources=*,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operators.coreos.com,resources=*,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=*
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
 func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// Loop iterates over the assets that are being managed by the policy

@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -36,6 +37,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	nfdk8s "sigs.k8s.io/node-feature-discovery/pkg/apis/nfd/v1alpha1"
 	xcardv1 "x100-operator/api/v1"
 )
@@ -46,13 +48,46 @@ func createServiceAccount(n ControllerState, res corev1.ServiceAccount) (xcardv1
 	namespace := robj.GetNamespace()
 
 	logger := log.Log.WithValues("ServiceAccount", name, "Namespace", namespace)
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}
@@ -69,13 +104,46 @@ func createSecret(n ControllerState, res corev1.Secret) (xcardv1.State, error) {
 	namespace := robj.GetNamespace()
 
 	logger := log.Log.WithValues("Secret", name, "Namespace", namespace)
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}
@@ -91,12 +159,45 @@ func createRole(n ControllerState, res rbacv1.Role) (xcardv1.State, error) {
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("Role", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}
@@ -112,13 +213,46 @@ func createRoleBinding(n ControllerState, res rbacv1.RoleBinding) (xcardv1.State
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("RoleBinding", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}
@@ -134,7 +268,7 @@ func createClusterRole(n ControllerState, res rbacv1.ClusterRole) (xcardv1.State
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("ClusterRole", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
@@ -156,7 +290,7 @@ func createClusterRoleBinding(n ControllerState, res rbacv1.ClusterRoleBinding) 
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("ClusterRoleBinding", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
@@ -204,13 +338,46 @@ func createPersistentVolume(n ControllerState, res corev1.PersistentVolume) (xca
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("PersistentVolume", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}
@@ -226,13 +393,46 @@ func createPersistentVolumeClaim(n ControllerState, res corev1.PersistentVolumeC
 	namespace := robj.GetNamespace()
 	logger := log.Log.WithValues("PersistentVolumeClaim", name, "Namespace", namespace)
 
-	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
 	if err := n.rec.Create(context.TODO(), robj); err != nil {
 		if errors.IsAlreadyExists(err) {
+			err = n.rec.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, robj)
+			if err != nil {
+				logger.Info("Couldn't fetch the existing resource", "Error", err)
+				return xcardv1.NotOperational, err
+			}
+
+			// Check current owner reference
+			var ownerRef *metav1.OwnerReference
+			for _, ref := range robj.GetOwnerReferences() {
+				if ref.Controller != nil && *ref.Controller {
+					ownerRef = &ref
+					break
+				}
+			}
+
+			if ownerRef != nil && string(ownerRef.UID) == string(n.x100Policy.UID) {
+				refs := []metav1.OwnerReference{}
+				robj.SetOwnerReferences(refs)
+
+				// Set new owner reference to CRD object
+				if err = controllerutil.SetControllerReference(n.x100crd, robj, n.rec.Scheme); err != nil {
+					logger.Info("Couldn't reset owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+				logger.Info("Resource ownership reset to x100 CRD")
+
+				// Update the resource with new owner reference
+				if err = n.rec.Update(context.TODO(), robj); err != nil {
+					logger.Info("Couldn't update owner reference", "Error", err)
+					return xcardv1.NotOperational, err
+				}
+			}
+
 			logger.Info("Resource exists from an earlier iteration of reconcile loop")
 			return xcardv1.Operational, nil
 		}

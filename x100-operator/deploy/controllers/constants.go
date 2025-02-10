@@ -7,7 +7,13 @@ package controllers
 
 import (
 	"time"
+
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	xcardv1 "x100-operator/api/v1"
+)
+
+const (
+	x100crdName = "x100managementpolicies.qualcomm.com"
 )
 
 var NamePrefixes = map[string]string{
@@ -203,4 +209,5 @@ type ControllerState struct {
 	assets       []string
 	x100Policy   *xcardv1.X100ManagementPolicy
 	rec          *X100ManagementPolicyReconciler
+	x100crd      *apiextv1.CustomResourceDefinition
 }

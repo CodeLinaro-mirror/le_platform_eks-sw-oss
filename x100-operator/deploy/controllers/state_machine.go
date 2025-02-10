@@ -21,10 +21,13 @@ package controllers
 import (
 	"context"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	corev1 "k8s.io/api/core/v1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	xcardv1 "x100-operator/api/v1"
 )
 
@@ -38,6 +41,13 @@ func (c *ControllerState) start(reconciler *X100ManagementPolicyReconciler, poli
 	c.assets = assets
 	c.x100Policy = policy
 	c.rec = reconciler
+	c.x100crd = &apiextv1.CustomResourceDefinition{}
+
+	if err := c.rec.Get(context.TODO(), types.NamespacedName{Name: x100crdName}, c.x100crd); err != nil {
+		log.Log.Info("Couldn't get x100 CRD", "Error", err)
+		return err
+	}
+
 	// Initialize the AssetMap
 	AssetMap = map[string]Asset{}
 

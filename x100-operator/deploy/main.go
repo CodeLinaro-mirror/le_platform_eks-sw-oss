@@ -41,7 +41,7 @@ import (
     nfdk8s "sigs.k8s.io/node-feature-discovery/pkg/apis/nfd/v1alpha1"
     opg "github.com/operator-framework/api/pkg/operators/v1"
     subs "github.com/operator-framework/api/pkg/operators/v1alpha1"
-
+    apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
     qualcommv1 "x100-operator/api/v1"
     "x100-operator/controllers"
     //+kubebuilder:scaffold:imports
@@ -60,6 +60,7 @@ func init() {
     utilruntime.Must(subs.AddToScheme(scheme))
     utilruntime.Must(kmmv1.AddToScheme(scheme))
     utilruntime.Must(secv1.AddToScheme(scheme))
+	utilruntime.Must(apiextv1.AddToScheme(scheme))
     //+kubebuilder:scaffold:scheme
 }
 
