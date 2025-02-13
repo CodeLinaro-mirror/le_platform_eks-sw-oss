@@ -36,7 +36,11 @@ RUN cd infralogmgr \
     && cd ../..
 
 FROM public.ecr.aws/docker/library/ubuntu:22.04
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    rsyslog
 COPY --from=builder /tmp/infralogmgr/build/infralogmgr /opt/data/csm/tools/infralogmgr/infralogmgr
-COPY ./CPM_X100_DMC.cfg /opt/data/csm/tools/infralogmgr/CPM_X100_DMC.cfg
+COPY ./infralogmgr/app/cfg /opt/data/csm/tools/infralogmgr/cfg
+CMD ["/usr/sbin/rsyslogd", "-n"]
 
 USER 65532:65532

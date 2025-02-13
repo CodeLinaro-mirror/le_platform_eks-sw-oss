@@ -10,7 +10,6 @@ spec:
   - name: eks-pull-secret
   containers:
   - image: <Replace with your registry>
-    command: [ "tail", "-f", "/dev/null" ]
     imagePullPolicy: Always
     name: infralogmgr-pod
     securityContext:
@@ -19,8 +18,8 @@ spec:
     volumeMounts:
     - mountPath: /dev
       name: dev
-    - mountPath: /var/log
-      name: varlog
+    - mountPath: /var/log/diagfwdlogs
+      name: diaglogs
   hostNetwork: true
   restartPolicy: Always
   serviceAccount: csm-x100-sa
@@ -29,8 +28,9 @@ spec:
   - name: dev
     hostPath:
       path: /dev
-  - name: varlog
+  - name: diaglogs
     hostPath:
-      path: /var/log
+      path: /var/log/diagfwdlogs
+      type: DirectoryOrCreate
   nodeSelector:
     kubernetes.io/hostname: <Replace with node name>
