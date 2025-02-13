@@ -162,6 +162,7 @@ var x100DeleteOnRebootLabels = []string{
 	x100OwnerPolicyDeleted,
 	x100TeardownCompleted,
 	x100EnablingFirstPolicy,
+	KModuleSelectorLabelKey,
 }
 
 var x100TransientStateLabels = []string{
