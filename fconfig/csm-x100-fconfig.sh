@@ -11,6 +11,10 @@ echo $DYNAMICCONFIG_PODNAME | rev | cut -d- -f2- | rev > /var/tmp/lassenconfig/f
 rsync -a /etc/config/* /var/lib/firmware/qcom/lassen/flatimg/config/.
 rsync -a /etc/config/* /var/tmp/lassenconfig/.
 
+mkdir -p /tmp/configmap
+cp -L /etc/configmap/"$CompressedConfig" /tmp/configmap/
+tar -xzf /tmp/configmap/"$CompressedConfig" -C /tmp/configmap/
+
 trim_version(){
     local filename="$1"
     local ext="${filename##*.}"
@@ -18,18 +22,18 @@ trim_version(){
     echo "$name"
 }
 
-if [ -n $ApplyConfiguration ] && [ -f /etc/configmap/$ApplyConfiguration ]; then
-    conf_file=/etc/configmap/"$ApplyConfiguration"
+if [ -n $ApplyConfiguration ] && [ -f /tmp/configmap/$ApplyConfiguration ]; then
+    conf_file=/tmp/configmap/"$ApplyConfiguration"
 
     while IFS= read -r file; do
         file=$(echo $file | sed 's/\r//g')
         dir=$(dirname $file)
         filename=$(basename $file)
-        if [ -f /etc/configmap/$filename ]; then
+        if [ -f /tmp/configmap/$file ]; then
             config_name=$(trim_version "$file")
-            cp -p /etc/configmap/$filename /var/lib/firmware/qcom/lassen/flatimg/config/"$config_name"
+            cp -p /tmp/configmap/$file /var/lib/firmware/qcom/lassen/flatimg/config/"$config_name"
             mkdir -p /var/tmp/lassenconfig/"$dir"
-            cp -p /etc/configmap/$filename /var/tmp/lassenconfig/"$config_name"
+            cp -p /tmp/configmap/$file /var/tmp/lassenconfig/"$config_name"
         fi
     done < "$conf_file"
 fi

@@ -20,6 +20,8 @@ spec:
       - name: csm-x100-fconfig
         image: #<ToBeReplaced with fconfig container image>
         imagePullPolicy: Always
+        securityContext:
+          privileged: true
         lifecycle:
           preStop:
             exec:
@@ -31,6 +33,8 @@ spec:
                 fieldPath: metadata.name
           - name: ApplyConfiguration
             value: apply_configuration.conf
+          - name: CompressedConfig
+            value: configfiles.tar.gz
         volumeMounts:
         - mountPath: /var/lib/firmware/qcom/lassen
           name: hostpath-privileged
