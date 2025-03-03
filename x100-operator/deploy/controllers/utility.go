@@ -1664,6 +1664,16 @@ func (c *ControllerState) isNodeUnschedulable(node *corev1.Node) bool {
 	return false
 }
 
+func (c * ControllerState) isNodeReady(node* corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+
 func (c *ControllerState) isX100NodeEligibleForBootStatusCheck(node *corev1.Node) (bool, int) {
 	/***
 		Ignore Node if

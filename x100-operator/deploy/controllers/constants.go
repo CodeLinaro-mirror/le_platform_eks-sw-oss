@@ -95,6 +95,8 @@ const (
 	x100HealthCheckStartTime  = "qualcomm.com/x100.x100HealthCheckStartTime"
 )
 
+var autoIsolation bool = false
+
 const (
 	x100LabelKey               = "qualcomm.com/x100.present"
 	x100LabelValue             = "true"

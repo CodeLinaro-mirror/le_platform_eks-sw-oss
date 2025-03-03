@@ -64,17 +64,23 @@ func (c *ControllerState) labelX100NodesIsolated(policy *xcardv1.X100ManagementP
 }
 
 func (c *ControllerState) labelX100Nodes(policy *xcardv1.X100ManagementPolicy, policySpec *xcardv1.X100ManagementPolicySpec) error {
-	// Check nodes for isolation
-	err := c.labelX100NodesIsolated(policy)
-	if err != nil {
-		return err
+	// Check for autoisolation
+	autoIsolation = policySpec.AutoIsolation
+	log.Log.Info(fmt.Sprintf("AutoIsolation feature is set to %v", autoIsolation))
+
+	if autoIsolation {
+		// Check nodes for isolation
+		err := c.labelX100NodesIsolated(policy)
+		if err != nil {
+			return err
+		}
 	}
 
 	// fetch all nodes in the cluster
 	log.Log.Info("Entering labelX100Nodes()")
 	opts := []client.ListOption{}
 	list := &corev1.NodeList{}
-	err = c.rec.List(context.TODO(), list, opts...)
+	err := c.rec.List(context.TODO(), list, opts...)
 	if err != nil {
 		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
 	}
@@ -324,9 +330,11 @@ func (c *ControllerState) labelX100NodeswithCR(policy *xcardv1.X100ManagementPol
 				nodehasNoActiveCRLabel := !hasActiveCRLabel(labels)
 				nodeEnablingPodSelectors := hasX100EnablingFirstPolicy(labels)
 				nodeHasRebooted := hasX100ComingUpAfterRebootLabel(labels)
+				canProcessNode := c.isNodeReady(&node)
+
 				log.Log.Info(fmt.Sprintf("Node %s has x100Attached=%v, noActiveCR=%v, enablingPodSelectors=%v, comingFromReboot=%v",
 					node.GetName(), hasx100Attached, nodehasNoActiveCRLabel, nodeEnablingPodSelectors, nodeHasRebooted))
-				if hasx100Attached {
+				if hasx100Attached && canProcessNode {
 					// Processing worker nodes that have x100 card attached to them
 					if nodehasNoActiveCRLabel {
 						log.Log.Info(fmt.Sprintf("Processing node %s for no activeCR label", node.ObjectMeta.Name))

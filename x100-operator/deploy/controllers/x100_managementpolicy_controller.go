@@ -238,7 +238,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		if !controllerutil.ContainsFinalizer(policyInstance, x100finalizer) {
 			controllerutil.AddFinalizer(policyInstance, x100finalizer)
 			if err := r.Update(ctx, policyInstance); err != nil {
-				return ctrl.Result{}, err
+				return ctrl.Result{RequeueAfter: time.Second * 5}, err
 			}
 		}
 	} else {
@@ -249,7 +249,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 			if err := r.deletePolicyOwnedResources(policyInstance); err != nil {
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried
-				return ctrl.Result{}, err
+				return ctrl.Result{RequeueAfter: time.Second * 5}, err
 			}
 
 			err = r.Get(ctx, req.NamespacedName, policyInstance)
@@ -270,91 +270,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
-	//remove the aggregation block label
-	opts := []client.ListOption{}
-	list := &corev1.NodeList{}
-	err = r.List(context.TODO(), list, opts...)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
 
-	for _, node := range list.Items {
-		labels := node.GetLabels()
-		if hasX100AggregationBlockedLabel(labels) && hasX100ComingUpAfterRebootLabel(labels) {
-			/***
-				If not is not part of any policy, then we can check for node status conditions
-				Otherwise, user has supplied invalid node into a policy List
-				We need to take out this node from the policy
-			***/
-
-			for _, condition := range node.Status.Conditions {
-				if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
-					log.Log.Info(fmt.Sprintf("Node %s is up after a reboot", node.GetName()))
-					nodeName := node.ObjectMeta.Name
-					nodeSlice := []string{nodeName}
-					policyName := labels[x100NodeAggregationBlocked]
-					policyopts := []client.ListOption{}
-					policylist := &xcardv1.X100ManagementPolicyList{}
-
-					err := x100Ctrl.rec.List(context.TODO(), policylist, policyopts...)
-					if err != nil {
-						log.Log.Error(err, "labelX100NodeswithCR()- Unable to list X100ManagementPolicy CRs")
-					}
-					for _, cr := range policylist.Items {
-						if cr.ObjectMeta.GetName() == policyName {
-							for _, node := range cr.Spec.NodeSelector {
-								if node == nodeName {
-									break
-								}
-							}
-							if cr.Spec.NodeSelector[0] == PlaceHolderNode {
-								cr.Spec.NodeSelector = []string{}
-							}
-							cr.Spec.NodeSelector = append(cr.Spec.NodeSelector, nodeSlice...)
-							x100Ctrl.rec.Update(context.TODO(), &cr)
-							if err != nil {
-								log.Log.Info(fmt.Sprintf("Unable to add node %s to exisiting policy : %s", cr.ObjectMeta.GetName(), node.ObjectMeta.Name))
-								return reconcile.Result{}, err
-							}
-						}
-					}
-					delete(labels, x100NodeAggregationBlocked)
-					err = x100Ctrl.setX100NodeLabels(&node, labels, x100NodeAggregationBlocked, LabelUpdateDeletionType)
-					if err != nil {
-						log.Log.Info(fmt.Sprintf("Unable to remove aggregation label for %s in reboot path, err %s",
-							node.ObjectMeta.Name, err.Error()))
-						return reconcile.Result{}, err
-					}
-				} else {
-					// Node is not ready or status is unknown
-					// Removing node from the policy
-
-					pnodes := policyInstance.Spec.NodeSelector
-					index := -1
-					for i, pnode := range pnodes {
-						if pnode == node.ObjectMeta.Name {
-							index = i
-							break
-						}
-					}
-
-					if index != -1 {
-						// We did find a match in the current Policy
-						policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector[:index], policyInstance.Spec.NodeSelector[index+1:]...)
-						if len(policyInstance.Spec.NodeSelector) == 0 {
-							policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector, PlaceHolderNode)
-						}
-						r.Update(context.TODO(), policyInstance)
-						if err != nil {
-							log.Log.Info(fmt.Sprintf("Unable to remove node %s from exisiting policy : %s",
-								policyInstance.GetName(), node.GetName()))
-							return reconcile.Result{}, err
-						}
-					}
-				}
-			}
-		}
-	}
 	// Handle runtime emptied selector list
 	if len(policyInstance.Spec.NodeSelector) == 1 {
 		if policyInstance.Spec.NodeSelector[0] == PlaceHolderNode {
@@ -365,8 +281,8 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	// Reboot path handling
-	opts = []client.ListOption{}
-	list = &corev1.NodeList{}
+	opts := []client.ListOption{}
+	list := &corev1.NodeList{}
 	err = r.List(context.TODO(), list, opts...)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -406,27 +322,6 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 							labels = cleanupLabelsOnReboot(labels)
 							// Label to indicate that we were in reboot path
 							labels[X100ComingUpAfterReboot] = "true"
-							labels[x100NodeAggregationBlocked] = policyInstance.ObjectMeta.Name
-
-							//remove the node from the policy
-							pnodes := policyInstance.Spec.NodeSelector
-							var index int
-							for i, pnode := range pnodes {
-								if pnode == node.ObjectMeta.Name {
-									index = i
-									break
-								}
-							}
-							policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector[:index], policyInstance.Spec.NodeSelector[index+1:]...)
-							if len(policyInstance.Spec.NodeSelector) == 0 {
-								policyInstance.Spec.NodeSelector = append(policyInstance.Spec.NodeSelector, PlaceHolderNode)
-							}
-							r.Update(context.TODO(), policyInstance)
-							if err != nil {
-								log.Log.Info(fmt.Sprintf("Unable to remove node %s from exisiting policy : %s",
-									policyInstance.ObjectMeta.GetName(), node.ObjectMeta.Name))
-								return reconcile.Result{}, err
-							}
 
 							node.SetLabels(labels)
 							err = x100Ctrl.setX100NodeLabels(&node, labels, X100ComingUpAfterReboot, LabelUpdateAdditionType)
@@ -506,7 +401,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 					if err := r.deletePolicyOwnedResources(policyInstance); err != nil {
 						// if fail to delete the external dependency here, return with error
 						// so that it can be retried
-						return ctrl.Result{}, err
+						return ctrl.Result{RequeueAfter: time.Second * 5}, err
 					}
 
 					// remove our finalizer from the list and update it.

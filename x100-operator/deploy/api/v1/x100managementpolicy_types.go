@@ -41,6 +41,7 @@ type X100ManagementPolicySpec struct {
     EnableRollback      bool             `json:"enableRollback"`
     NodeSelector        []string         `json:"nodeSelector,omitempty"`
     VfCount             int              `json:"vfCount,omitempty"`
+    AutoIsolation	bool		 `json:"autoIsolation,omitempty"`
     X100Resources       X100ResourceSpec `json:"x100Resources"`
 }
 
