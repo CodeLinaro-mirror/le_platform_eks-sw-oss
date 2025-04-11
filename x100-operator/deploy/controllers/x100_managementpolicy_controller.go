@@ -56,14 +56,14 @@ type X100ManagementPolicyReconciler struct {
 	RESTConfig *rest.Config
 }
 
-func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance *xcardv1.X100ManagementPolicy) error {
+func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance *xcardv1.X100ManagementPolicy) (error, bool) {
 	/***
 		for nodes under currently deleted Policy
 			delete all labels,
 			if isolate exists, retain x100.present
 			Retain ownerPolicyDeleted label on all such nodes
 	***/
-
+	ignoreError := false
 	policyopts := []client.ListOption{}
 	policylist := &xcardv1.X100ManagementPolicyList{}
 	err := r.List(context.TODO(), policylist, policyopts...)
@@ -77,14 +77,14 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 	if len(policylist.Items) == 0 {
 		//PolicyList is empty
 		log.Log.Info("Cluster doesn't have any X100 management policies, exiting...")
-		return nil
+		return nil, ignoreError
 	}
 
 	opts := []client.ListOption{}
 	list := &corev1.NodeList{}
 	err = r.List(context.TODO(), list, opts...)
 	if err != nil {
-		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error())
+		return fmt.Errorf("Unable to list nodes to check labels, err %s", err.Error()), ignoreError
 	}
 
 	isLastPolicy := false
@@ -109,12 +109,13 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 					if !hasX100TeardownCompletedLabel(labels) {
 						err = x100Ctrl.teardownX100ManagementPolicyOwnedPodsOnNode(&node)
 						if err != nil {
-							return err
+							ignoreError = true
+							return err, ignoreError
 						}
 
 						err, rnode := x100Ctrl.fetchUpdatedNodeInstance(&node)
 						if err != nil {
-							return err
+							return err, ignoreError
 						}
 						node = *rnode
 						labels = x100Ctrl.getNodeLabels(node)
@@ -148,7 +149,7 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 			err = x100Ctrl.setX100NodeLabels(&node, labels, x100OwnerPolicyDeleted, LabelUpdateAdditionType)
 			if err != nil {
 				return fmt.Errorf("Unable to add node label %s for %s during policy deletion, err %s",
-					x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error())
+					x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error()), ignoreError
 			}
 
 			// Clean annotations
@@ -159,7 +160,7 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 			err = x100Ctrl.setX100NodeAnnotations(&node, labels, nodeProcessingStartTime, LabelUpdateDeletionType)
 			if err != nil {
 				return fmt.Errorf("Unable to delete node annotation for %s , err %s",
-					node.ObjectMeta.Name, err.Error())
+					node.ObjectMeta.Name, err.Error()), ignoreError
 			}
 		}
 
@@ -167,7 +168,7 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 			// Fetch updated Labels
 			err, rnode := x100Ctrl.fetchUpdatedNodeInstance(&node)
 			if err != nil {
-				return err
+				return err, ignoreError
 			}
 			node = *rnode
 			labels = node.GetLabels()
@@ -181,17 +182,20 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 				err = x100Ctrl.setX100NodeLabels(&node, labels, x100OwnerPolicyDeleted, LabelUpdateDeletionType)
 				if err != nil {
 					return fmt.Errorf("Unable to remove node label %s from %s during last policy deletion, err %s",
-						x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error())
+						x100OwnerPolicyDeleted, node.ObjectMeta.Name, err.Error()), ignoreError
 				}
 			}
 		}
 	}
-	return nil
+	return nil, ignoreError
 }
 
 func (r *X100ManagementPolicyReconciler) deletePolicyOwnedResources(policyInstance *xcardv1.X100ManagementPolicy) error {
 	log.Log.Info("qualcomm.com/finalizer invoked the cleanup logic", policyInstance.ObjectMeta.Name, policyInstance.Spec.NodeSelector)
-	err := r.clearLabelsOnCrDeletion(policyInstance)
+	err, ignoreError := r.clearLabelsOnCrDeletion(policyInstance)
+	if ignoreError {
+		return nil
+	}
 	return err
 }
 
