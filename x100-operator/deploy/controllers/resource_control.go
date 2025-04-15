@@ -803,7 +803,7 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
 
 	// update image
 	obj.Spec.Template.Spec.Containers[0].Image = config.X100Resources.HwManager.ImagePath()
-	obj.Spec.Template.Spec.Containers[3].Image = config.X100Resources.HwManager.ExpImagePath()
+	obj.Spec.Template.Spec.Containers[4].Image = config.X100Resources.HwManager.ExpImagePath()
 	// update image pull policy
 	if config.X100Resources.HwManager.ImagePullPolicy != "" {
 		obj.Spec.Template.Spec.Containers[0].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
