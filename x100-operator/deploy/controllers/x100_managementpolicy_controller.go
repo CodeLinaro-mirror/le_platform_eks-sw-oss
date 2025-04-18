@@ -190,13 +190,10 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 	return nil, ignoreError
 }
 
-func (r *X100ManagementPolicyReconciler) deletePolicyOwnedResources(policyInstance *xcardv1.X100ManagementPolicy) error {
+func (r *X100ManagementPolicyReconciler) deletePolicyOwnedResources(policyInstance *xcardv1.X100ManagementPolicy) (error, bool) {
 	log.Log.Info("qualcomm.com/finalizer invoked the cleanup logic", policyInstance.ObjectMeta.Name, policyInstance.Spec.NodeSelector)
 	err, ignoreError := r.clearLabelsOnCrDeletion(policyInstance)
-	if ignoreError {
-		return nil
-	}
-	return err
+	return err, ignoreError
 }
 
 // +kubebuilder:rbac:groups=qualcomm.com,resources=*,verbs=get;list;watch;create;update;patch;delete
@@ -250,10 +247,16 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 		// Delete policy and related resources from all nodes under this policy
 		if controllerutil.ContainsFinalizer(policyInstance, x100finalizer) {
 			// our finalizer is present, so lets handle any external dependency
-			if err := r.deletePolicyOwnedResources(policyInstance); err != nil {
+			if err, ignoreError := r.deletePolicyOwnedResources(policyInstance); err != nil {
 				// if fail to delete the external dependency here, return with error
 				// so that it can be retried
-				return ctrl.Result{RequeueAfter: time.Second * 5}, err
+				if ignoreError {
+					// Pod termination related errors
+					return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+				}
+
+				// Exponential back off time
+				return ctrl.Result{}, err
 			}
 
 			err = r.Get(ctx, req.NamespacedName, policyInstance)
@@ -402,10 +405,16 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 			if !policyInstance.ObjectMeta.DeletionTimestamp.IsZero() {
 				if controllerutil.ContainsFinalizer(policyInstance, x100finalizer) {
 					// our finalizer is present, so lets handle any external dependency
-					if err := r.deletePolicyOwnedResources(policyInstance); err != nil {
+					if err, ignoreError := r.deletePolicyOwnedResources(policyInstance); err != nil {
 						// if fail to delete the external dependency here, return with error
 						// so that it can be retried
-						return ctrl.Result{RequeueAfter: time.Second * 5}, err
+						if ignoreError {
+							// Pod termination related errors
+							return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+						}
+
+						// Exponential back off time
+						return ctrl.Result{}, err
 					}
 
 					// remove our finalizer from the list and update it.
