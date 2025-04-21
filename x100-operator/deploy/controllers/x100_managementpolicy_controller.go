@@ -252,7 +252,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 				// so that it can be retried
 				if ignoreError {
 					// Pod termination related errors
-					return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+					return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 				}
 
 				// Exponential back off time
@@ -410,7 +410,7 @@ func (r *X100ManagementPolicyReconciler) Reconcile(ctx context.Context, req ctrl
 						// so that it can be retried
 						if ignoreError {
 							// Pod termination related errors
-							return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+							return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 						}
 
 						// Exponential back off time
