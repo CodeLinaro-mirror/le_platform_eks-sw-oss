@@ -807,7 +807,7 @@ func TransformHWManager(obj *appsv1.DaemonSet, config *xcardv1.X100ManagementPol
 	// update image pull policy
 	if config.X100Resources.HwManager.ImagePullPolicy != "" {
 		obj.Spec.Template.Spec.Containers[0].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
-		obj.Spec.Template.Spec.Containers[3].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
+		obj.Spec.Template.Spec.Containers[4].ImagePullPolicy = config.X100Resources.HwManager.ImagePolicy(config.X100Resources.HwManager.ImagePullPolicy)
 	}
 
 	if len(config.X100Resources.HwManager.ImagePullSecrets) > 0 {
