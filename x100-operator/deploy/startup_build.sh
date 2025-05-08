@@ -26,6 +26,8 @@ cd $DEST_PATH
 # Create an operator project, this will generate boilerplate code
 operator-sdk init --domain=com --repo ${DEST_PATH:1}
 operator-sdk create api --group=qualcomm --version=v1 --kind=X100ManagementPolicy
+# https://sdk.operatorframework.io/docs/building-operators/golang/webhook/
+operator-sdk create webhook --group=qualcomm --version=v1 --kind=X100ManagementPolicy --programmatic-validation
 
 # Copy the PROJECT file, change it accordingly if domain and group have been changed
 \cp $SOURCE_PATH/PROJECT $DEST_PATH/PROJECT
@@ -65,6 +67,7 @@ make generate manifests
 \cp -r $SOURCE_PATH/config/manifests/bases $DEST_PATH/config/manifests/
 \cp -r $SOURCE_PATH/config/manager/* $DEST_PATH/config/manager/
 \cp -r $SOURCE_PATH/config/default/* $DEST_PATH/config/default/
+\cp -r $SOURCE_PATH/config/webhook/* $DEST_PATH/config/webhook/
 
 # Run make commands
 make docker-build docker-push

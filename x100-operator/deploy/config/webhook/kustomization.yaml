@@ -1,0 +1,7 @@
+namePrefix: x100-operator-
+resources:
+- manifests.yaml
+- service.yaml
+
+configurations:
+- kustomizeconfig.yaml
