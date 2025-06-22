@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,6 +39,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	nfdk8s "sigs.k8s.io/node-feature-discovery/pkg/apis/nfd/v1alpha1"
 	xcardv1 "x100-operator/api/v1"
 )
@@ -560,20 +562,30 @@ func createModule(n ControllerState, res kmmv1.Module) (xcardv1.State, error) {
 	log.Log.Info("Preprocessing Module to replace the fields from CR manifest")
 
 	preProcessModule(robj, n)
+	desired := robj.DeepCopy()
+
 	logger := log.Log.WithValues("Module", name, "Namespace", namespace)
 	if err := controllerutil.SetControllerReference(n.x100Policy, robj, n.rec.Scheme); err != nil {
 		return xcardv1.NotOperational, err
 	}
 
 	// Create the resource from decoded manifest object
-	if err := n.rec.Create(context.TODO(), robj); err != nil {
-		if errors.IsAlreadyExists(err) {
+	action, err := controllerutil.CreateOrUpdate(context.TODO(), n.rec.Client, robj, func() error {
+		if reflect.DeepEqual(robj.Spec, desired.Spec) {
 			logger.Info("Resource exists from an earlier iteration, Updates if any changes are present")
-			return isModuleReady(robj.ObjectMeta.Name, n), nil
+			return nil
 		}
+
+		robj.Spec = desired.Spec
+		return nil
+	})
+
+	if err != nil {
 		logger.Info("Couldn't create", "Error", err)
 		return xcardv1.NotOperational, err
 	}
+
+	logger.Info(fmt.Sprintf("Module resource %s is %s", robj.ObjectMeta.Name, action))
 	return isModuleReady(robj.ObjectMeta.Name, n), nil
 }
 
@@ -590,16 +602,32 @@ func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, er
 		return xcardv1.NotOperational, err
 	}
 
-	// Create the resource from decoded manifest object
-	if err := n.rec.Create(context.TODO(), robj); err != nil {
-		if errors.IsAlreadyExists(err) {
-			logger.Info(fmt.Sprintf("Resource %s exists from an earlier iteration of reconcile loop", name))
-			return isDaemonSetReady(getDSLabel(name), n), nil
+	// Create or update the resource
+	action, err := ctrl.CreateOrUpdate(context.TODO(), n.rec.Client, robj, func() error {
+		desired := res.DeepCopy()
+		preProcessDaemonSet(desired, n)
+
+		for i := range robj.Spec.Template.Spec.Containers {
+			robjC := &robj.Spec.Template.Spec.Containers[i]
+			desiredC := &desired.Spec.Template.Spec.Containers[i]
+			if robjC.Image != desiredC.Image {
+				robjC.Image = desiredC.Image
+			}
 		}
-		logger.Info("Couldn't create", "Error", err)
+
+		if !reflect.DeepEqual(robj.Spec.Template.Spec.ImagePullSecrets, desired.Spec.Template.Spec.ImagePullSecrets) {
+			robj.Spec.Template.Spec.ImagePullSecrets = desired.Spec.Template.Spec.ImagePullSecrets
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		logger.Info("Couldn't create or update DaemonSet", "Error", err)
 		return xcardv1.NotOperational, err
 	}
 
+	logger.Info(fmt.Sprintf("Resource %s is %s", name, action))
 	return isDaemonSetReady(getDSLabel(name), n), nil
 }
 
