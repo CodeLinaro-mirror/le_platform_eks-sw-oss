@@ -6,7 +6,7 @@ RUN apt-get update \
        rsyslog bash rsync \
     && apt-get clean
 
-COPY --chown=bin csm-x100-fconfig.sh /usr/bin
+COPY --chown=bin --chmod=755 csm-x100-fconfig.sh /usr/bin
 COPY --chmod=777 config /etc/config
 
 CMD ["/usr/bin/csm-x100-fconfig.sh"]

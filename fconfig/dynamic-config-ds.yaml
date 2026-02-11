@@ -25,12 +25,16 @@ spec:
         lifecycle:
           preStop:
             exec:
-              command: ["/bin/bash", "-c", "rm -rf /var/tmp/lassenconfig /var/tmp/vf-count.conf /var/tmp/fconfig-state.conf"]
+              command: ["/bin/bash", "-c", "rm -rf /var/tmp/lassenconfig /var/tmp/lassenconfig_common /var/tmp/lassenconfig_devices /var/tmp/device_specific_configs_available /var/tmp/vf-count.conf /var/tmp/fconfig-state.conf"]
         env:
           - name: DYNAMICCONFIG_PODNAME
             valueFrom:
               fieldRef:
                 fieldPath: metadata.name
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
           - name: ApplyConfiguration
             value: apply_configuration.conf
           - name: CompressedConfig
