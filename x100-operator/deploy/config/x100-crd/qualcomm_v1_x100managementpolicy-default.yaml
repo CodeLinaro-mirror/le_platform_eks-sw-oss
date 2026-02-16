@@ -7,6 +7,7 @@ spec:
   enableRollback: false  #don't modify for the default version of deployment
   nodeSelector:      #Don't modify the nodeSelectors list for default swversion
   vfCount: 4
+  #enableInterfaceRenaming: true #ToEnableInterfaceRenaming
   x100Resources:
     firmware:
       repository: #<CIR registry URL>

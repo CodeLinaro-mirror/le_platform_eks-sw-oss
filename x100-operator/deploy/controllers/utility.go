@@ -422,6 +422,13 @@ func setEnvVariablesForHwManagerPod(c *corev1.Container, config *xcardv1.X100Man
 		value = strconv.Itoa(config.VfCount)
 	}
 	setContainerEnv(c, key, value)
+
+	// Capture values for environment variable ENABLEINTERFACERENAMING
+	if config.EnableInterfaceRenaming {
+		key = "ENABLEINTERFACERENAMING"
+		value = "true"
+	}
+	setContainerEnv(c, key, value)
 }
 
 func getX100EnabledNodesCount(n ControllerState) (int, *corev1.NodeList) {
@@ -1288,7 +1295,7 @@ func (c *ControllerState) teardownX100ManagementPolicyOwnedPodsOnNode(node *core
 	if err != nil {
 		return err
 	}
-	
+
 	/*** Firmware Pod Deletion ***/
 	labels = c.getNodeLabels(*node)
 	if _, ok := labels[FirmwareDsSelectorLabelKey]; ok {

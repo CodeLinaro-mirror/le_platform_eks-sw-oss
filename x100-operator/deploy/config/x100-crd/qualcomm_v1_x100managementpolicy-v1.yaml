@@ -8,6 +8,7 @@ spec:
   nodeSelector:
   - <Node-Name> #ToBeReplaced
   vfCount: 4
+  #enableInterfaceRenaming: true #ToEnableInterfaceRenaming
   x100Resources:
     firmware:
       repository: #<CIR registry URL>
