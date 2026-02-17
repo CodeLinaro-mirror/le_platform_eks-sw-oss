@@ -157,7 +157,7 @@ func (r *X100ManagementPolicyReconciler) clearLabelsOnCrDeletion(policyInstance 
 			annotations = cleanupStaleAnnotations(annotations)
 			node.SetAnnotations(annotations)
 
-			err = x100Ctrl.setX100NodeAnnotations(&node, labels, nodeProcessingStartTime, LabelUpdateDeletionType)
+			err = x100Ctrl.setX100NodeAnnotations(&node, annotations, nodeProcessingStartTime, LabelUpdateDeletionType)
 			if err != nil {
 				return fmt.Errorf("Unable to delete node annotation for %s , err %s",
 					node.ObjectMeta.Name, err.Error()), ignoreError
