@@ -106,7 +106,7 @@ spec:
         - -c
         - |
           trap 'echo "Stopping log tail"; exit 0' TERM
-          tail -n+1 -F /var/log/ping-test.log /var/log/x100-state.log /var/log/healthinfo.log /var/log/swversion.log /var/log/completion.log /var/log/hwmgr-csmrunks_0.log /var/log/QSaharaServer_0.log /var/log/inotify_monitor.log /var/log/mhi0_BL.log /var/log/hwmgr_csmctrl.log /var/log/dumps_cleanup.log /var/log/csm-x100-enablevf.log /var/log/csm0_dp.log /var/log/csm-x100-fconfigmonitor.log /var/log/fconfig-reset-count.log /var/log/fconfig-version.log /var/log/csm-x100-mhisocreset.log /var/log/hwmgr_sahara.log /var/log/csm_device_0.log
+          tail -n+1 -F /var/log/ping-test.log /var/log/x100-state.log /var/log/healthinfo.log /var/log/swversion.log /var/log/completion.log /var/log/hwmgr-csmrunks_0.log /var/log/QSaharaServer_0.log /var/log/inotify_monitor.log /var/log/mhi0_BL.log /var/log/hwmgr_csmctrl.log /var/log/dumps_cleanup.log /var/log/csm-x100-enablevf.log /var/log/csm0_dp.log /var/log/csm-x100-fconfigmonitor.log /var/log/fconfig-reset-count.log /var/log/fconfig-version.log /var/log/csm-x100-mhisocreset.log /var/log/hwmgr_sahara.log /var/log/csm_device_0.log /var/log/csm-x100-process_ltefh_vfs.log
       - name: csm-x100-exporter
         image: <exporter container image>
         imagePullPolicy: Always
