@@ -37,12 +37,13 @@ import (
 // X100ManagementPolicySpec defines the desired state of X100ManagementPolicy
 type X100ManagementPolicySpec struct {
     // +kubebuilder:validation:Pattern=[a-zA-Z0-9\.\-\/]+
-    SwVersion           string           `json:"swVersion"`
-    EnableRollback      bool             `json:"enableRollback"`
-    NodeSelector        []string         `json:"nodeSelector,omitempty"`
-    VfCount             int              `json:"vfCount,omitempty"`
-    AutoIsolation	bool		 `json:"autoIsolation,omitempty"`
-    X100Resources       X100ResourceSpec `json:"x100Resources"`
+    SwVersion                string              `json:"swVersion"`
+    EnableRollback           bool                `json:"enableRollback"`
+    NodeSelector             []string            `json:"nodeSelector,omitempty"`
+    VfCount                  int                 `json:"vfCount,omitempty"`
+    EnableInterfaceRenaming  bool                `json:"enableInterfaceRenaming,omitempty"`
+    AutoIsolation	     bool		 `json:"autoIsolation,omitempty"`
+    X100Resources            X100ResourceSpec    `json:"x100Resources"`
 }
 
 type X100ResourceSpec struct {
