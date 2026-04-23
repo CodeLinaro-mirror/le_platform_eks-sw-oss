@@ -730,20 +730,6 @@ func (c *ControllerState) getPodCompletionStatus(node *corev1.Node, podNamePrefi
 		return status, err
 	}
 
-	//check for unavailability of daemonset
-	opts := []client.ListOption{client.MatchingLabels{"app": podNamePrefix}}
-	list := &appsv1.DaemonSetList{}
-	err = c.rec.List(context.TODO(), list, opts...)
-	if err != nil {
-		log.Log.Info("Could not get DaemonSetList", err)
-	}
-	for _, ds := range list.Items {
-		if ds.Status.NumberUnavailable != 0{
-			log.Log.Info(fmt.Sprintf("Daemonset with prefix %s is not available yet", podNamePrefix))
-			return status, nil
-		}
-	}
-
 	out := string(output)
 	if strings.Contains(out, "completed") {
 		log.Log.Info(fmt.Sprintf("Completion status as read from pod on node %s is %s", node.GetName(), out))
@@ -871,27 +857,15 @@ func isDeploymentReady(name string, n ControllerState) xcardv1.State {
 }
 
 func isDaemonSetReady(name string, n ControllerState) xcardv1.State {
-	opts := []client.ListOption{client.MatchingLabels{"app": name}}
-
-	log.Log.Info("DEBUG: DaemonSet", "LabelSelector", fmt.Sprintf("app=%s", name))
-	list := &appsv1.DaemonSetList{}
-	err := n.rec.List(context.TODO(), list, opts...)
+	var ds appsv1.DaemonSet
+	err := n.rec.Get(context.TODO(), client.ObjectKey{Namespace: assetsNamespace, Name: name}, &ds)
 	if err != nil {
-		log.Log.Info("Could not get DaemonSetList", err)
-	}
-	log.Log.Info("DEBUG: DaemonSet", "NumberOfDaemonSets", len(list.Items))
-	if len(list.Items) == 0 {
 		return xcardv1.NotOperational
 	}
 
-	ds := list.Items[0]
-	log.Log.Info("DEBUG: DaemonSet", "NumberUnavailable", ds.Status.NumberUnavailable)
+	appName := getDSLabel(name)
+	return isPodReady("app", appName, n, "Running")
 
-	if ds.Status.NumberUnavailable != 0 {
-		return xcardv1.NotOperational
-	}
-
-	return isPodReady("app", name, n, "Running")
 }
 
 func (c *ControllerState) isFirmwareDSCreated() bool {

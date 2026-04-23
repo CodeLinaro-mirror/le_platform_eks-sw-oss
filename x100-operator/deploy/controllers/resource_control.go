@@ -628,7 +628,7 @@ func createDaemonSet(n ControllerState, res appsv1.DaemonSet) (xcardv1.State, er
 	}
 
 	logger.Info(fmt.Sprintf("Resource %s is %s", name, action))
-	return isDaemonSetReady(getDSLabel(name), n), nil
+	return isDaemonSetReady(name, n), nil
 }
 
 func createDeployment(n ControllerState, res appsv1.Deployment) (xcardv1.State, error) {
