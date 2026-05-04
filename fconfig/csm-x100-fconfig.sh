@@ -387,8 +387,12 @@ for device_entry in "${device_queue[@]}"; do
 done
 
 # Create a special marker file if we have any device configurations
+rm -f /var/tmp/fconfig-device-list.conf
 if [ ${#all_devices[@]} -gt 0 ]; then
     echo "1" > /var/tmp/device_specific_configs_available
+    for device in "${all_devices[@]}"; do
+        echo "$device" >> /var/tmp/fconfig-device-list.conf
+    done
     echo "Device configurations prepared for ${#all_devices[@]} devices: ${all_devices[*]}" >> /var/tmp/lassenconfig_devices/device_config.log
 else
     echo "No devices processed from device_list.conf" >> /var/tmp/lassenconfig_devices/device_config.log
